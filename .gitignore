@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.so
+
+# Environment
+*.env
+.env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+checkpoints/
+logs/
+benchmarks/*.json
+!benchmarks/*speedup_measurements.json
+
+# Temp
+/tmp/
+*.tmp
