@@ -1,0 +1,119 @@
+{
+  "phase": "D",
+  "classification": "FUNCTIONAL MEMORY SYSTEM",
+  "checks": {
+    "D.1_episodic_trace": true,
+    "D.2_semantic_graph": true,
+    "D.3_retrieval_quality": true,
+    "D.4_consolidation": true,
+    "D.5_adaptation": true,
+    "D.6_viability": true
+  },
+  "n_pass": 6,
+  "n_total": 6,
+  "d1_episodic": {
+    "checks": {
+      "episodes_stored": true,
+      "memory_grows": true,
+      "retrieval_works": true,
+      "unique_concepts": true
+    },
+    "final_stats": {
+      "n_episodes": 25,
+      "total_stored": 25,
+      "avg_importance": 0.5072309124469757,
+      "unique_concepts": 67
+    }
+  },
+  "d2_semantic": {
+    "checks": {
+      "graph_grows": true,
+      "edges_exist": true,
+      "density_changes": true,
+      "entropy_nonzero": true,
+      "repeated_strengthened": true
+    },
+    "initial": {
+      "n_nodes": 46,
+      "n_edges": 88,
+      "graph_density": 0.08502415458937199,
+      "avg_edge_strength": 0.5087656241248955,
+      "max_edge_strength": 0.578145444393158,
+      "entropy": 4.4733762214663955,
+      "connected_components": 3
+    },
+    "final": {
+      "n_nodes": 54,
+      "n_edges": 110,
+      "graph_density": 0.07686932215234102,
+      "avg_edge_strength": 0.5197940182143991,
+      "max_edge_strength": 0.7462740123271941,
+      "entropy": 4.694935425838527,
+      "connected_components": 3
+    }
+  },
+  "d3_retrieval": {
+    "checks": {
+      "recall_at_5_ge_0.6": true,
+      "latency_lt_10ms": true,
+      "exact_match_works": true,
+      "graded_retrieval": true
+    },
+    "avg_recall_at_5": 0.6,
+    "avg_latency_ms": 0.06502999995063874
+  },
+  "d4_consolidation": {
+    "checks": {
+      "slept_true": true,
+      "graph_modified": true,
+      "entropy_not_increased": true,
+      "sleep_count_gt_0": true
+    },
+    "sleep_result": {
+      "pre_sleep": {
+        "n_nodes": 67,
+        "n_edges": 125,
+        "graph_density": 0.056535504296698326,
+        "avg_edge_strength": 0.5187618811607361,
+        "max_edge_strength": 0.7462740123271941,
+        "entropy": 4.823076253499176,
+        "connected_components": 7
+      },
+      "post_sleep": {
+        "n_nodes": 67,
+        "n_edges": 125,
+        "graph_density": 0.056535504296698326,
+        "avg_edge_strength": 0.622514257392883,
+        "max_edge_strength": 0.8955288147926329,
+        "entropy": 4.82307625350016,
+        "connected_components": 7
+      },
+      "delta": {
+        "nodes_pruned": 0,
+        "edges_pruned": 0,
+        "edges_strengthened": 125,
+        "entropy_reduction": -9.841016890277388e-13,
+        "compression_ratio": 1.0,
+        "episodes_pruned": 0
+      },
+      "sleep_count": 1
+    }
+  },
+  "d5_adaptation": {
+    "checks": {
+      "retention_gt_0.7": true,
+      "initial_retention_high": true,
+      "not_catastrophic": true
+    },
+    "final_retention": 1.0
+  },
+  "d6_viability": {
+    "checks": {
+      "sublinear_retrieval": true,
+      "no_ram_explosion": true,
+      "retrieval_fast": true,
+      "graph_bounded": true
+    },
+    "avg_growth_rate": 0.41293288275048345
+  }
+}

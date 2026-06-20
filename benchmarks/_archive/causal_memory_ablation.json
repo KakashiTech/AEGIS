@@ -1,0 +1,54 @@
+{
+  "ablation_results": [
+    {
+      "query": [
+        "network",
+        "packet",
+        "anomaly"
+      ],
+      "retrieved_with": 3,
+      "retrieved_without": 0,
+      "delta_mamba": 0.008652279153466225,
+      "delta_anomaly": 8.720159530639648e-05,
+      "delta_rollout": 0.004053123760968447
+    },
+    {
+      "query": [
+        "gradient",
+        "loss",
+        "optimizer"
+      ],
+      "retrieved_with": 3,
+      "retrieved_without": 1,
+      "delta_mamba": 0.00912462081760168,
+      "delta_anomaly": 0.00022029876708984375,
+      "delta_rollout": 0.0002974655944854021
+    },
+    {
+      "query": [
+        "memory",
+        "retrieval",
+        "sleep"
+      ],
+      "retrieved_with": 3,
+      "retrieved_without": 2,
+      "delta_mamba": 0.011897924356162548,
+      "delta_anomaly": 0.0001251697540283203,
+      "delta_rollout": 0.024363125674426556
+    },
+    {
+      "query": [
+        "quantum",
+        "physics",
+        "unknown"
+      ],
+      "retrieved_with": 3,
+      "retrieved_without": 3,
+      "delta_mamba": 0.007158377207815647,
+      "delta_anomaly": 9.834766387939453e-06,
+      "delta_rollout": 0.015348533634096384
+    }
+  ],
+  "avg_delta_mamba": 0.009208300383761525,
+  "avg_delta_anomaly": 0.000110626220703125
+}

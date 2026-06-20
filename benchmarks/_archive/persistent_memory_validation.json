@@ -1,0 +1,18 @@
+{
+  "pre_restart": {
+    "eps": 50,
+    "nodes": 16,
+    "hash": "cd7bbc3b6a727376",
+    "retrieval": 3
+  },
+  "post_restart": {
+    "eps": 50,
+    "nodes": 16,
+    "hash": "cd7bbc3b6a727376",
+    "retrieval": 3
+  },
+  "hash_match": true,
+  "eps_match": true,
+  "nodes_match": true,
+  "retrieval_match": true
+}

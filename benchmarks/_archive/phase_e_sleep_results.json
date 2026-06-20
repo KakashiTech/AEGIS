@@ -1,0 +1,68 @@
+{
+  "phase": "E",
+  "classification": "FUNCTIONAL SLEEP SYSTEM",
+  "checks": {
+    "E.1_forced_cycles": true,
+    "E.2_catastrophic_forgetting": true,
+    "E.3_compression": true,
+    "E.4_semantic_replay": true,
+    "E.5_long_horizon": true,
+    "E.6_behavioral_improvement": true
+  },
+  "n_pass": 6,
+  "n_total": 6,
+  "e1": {
+    "checks": {
+      "injections_ge_1000": true,
+      "sleep_cycles_ge_5": true,
+      "slept_repeatedly": true,
+      "graph_evolved": true,
+      "nrem_active": true,
+      "rem_active": true
+    },
+    "injections": 1000,
+    "sleep_cycles": 10
+  },
+  "e2": {
+    "checks": {
+      "retention_ratio_gt_0.7": true,
+      "pre_retention_positive": true,
+      "not_erased": true
+    },
+    "retention_ratio": 1.0
+  },
+  "e3": {
+    "checks": {
+      "compression_ge_1.1": true,
+      "entropy_bounded": true,
+      "edges_not_exploding": true,
+      "some_compression": true
+    },
+    "avg_compression": 1.1072549019607845
+  },
+  "e4": {
+    "checks": {
+      "replay_executed": true,
+      "motif_a_retrieval_stable": true,
+      "edges_exist": true
+    },
+    "selective": false
+  },
+  "e5": {
+    "checks": {
+      "latency_degradation_lt_2x": true,
+      "ram_growth_bounded": true,
+      "graph_stable": true,
+      "no_crash": true
+    },
+    "latency_degradation": 1.4191241006183637
+  },
+  "e6": {
+    "checks": {
+      "edge_improvement_ge_0": true,
+      "retrieval_stable": true,
+      "discrimination_stable": true
+    },
+    "improvement_pct": 38.01863291148502
+  }
+}

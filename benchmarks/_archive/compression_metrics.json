@@ -1,0 +1,52 @@
+[
+  {
+    "phase": 0,
+    "eps_before": 20,
+    "eps_after": 20,
+    "compression_ratio": 1.0,
+    "edges_before": 10,
+    "edges_after": 10,
+    "edge_growth": 0,
+    "entropy": 2.3025850919810202
+  },
+  {
+    "phase": 1,
+    "eps_before": 40,
+    "eps_after": 40,
+    "compression_ratio": 1.0,
+    "edges_before": 10,
+    "edges_after": 10,
+    "edge_growth": 0,
+    "entropy": 2.3025850919810202
+  },
+  {
+    "phase": 2,
+    "eps_before": 60,
+    "eps_after": 51,
+    "compression_ratio": 1.1764705882352942,
+    "edges_before": 10,
+    "edges_after": 10,
+    "edge_growth": 0,
+    "entropy": 2.3025850919810202
+  },
+  {
+    "phase": 3,
+    "eps_before": 71,
+    "eps_after": 60,
+    "compression_ratio": 1.1833333333333333,
+    "edges_before": 10,
+    "edges_after": 10,
+    "edge_growth": 0,
+    "entropy": 2.3025850919810202
+  },
+  {
+    "phase": 4,
+    "eps_before": 80,
+    "eps_after": 68,
+    "compression_ratio": 1.1764705882352942,
+    "edges_before": 10,
+    "edges_after": 10,
+    "edge_growth": 0,
+    "entropy": 2.3025850919810202
+  }
+]

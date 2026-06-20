@@ -1,0 +1,130 @@
+[
+  {
+    "batch_size": 1,
+    "seq_len": 32,
+    "total_samples": 32,
+    "avg_time_s": 0.004863915200053271,
+    "flows_per_sec": 205.59568965944302,
+    "latency_ms_per_sample": 4.86391520005327
+  },
+  {
+    "batch_size": 1,
+    "seq_len": 64,
+    "total_samples": 64,
+    "avg_time_s": 0.010194274950026738,
+    "flows_per_sec": 98.09427398241571,
+    "latency_ms_per_sample": 10.194274950026738
+  },
+  {
+    "batch_size": 1,
+    "seq_len": 128,
+    "total_samples": 128,
+    "avg_time_s": 0.01644658415000322,
+    "flows_per_sec": 60.80289930598168,
+    "latency_ms_per_sample": 16.44658415000322
+  },
+  {
+    "batch_size": 1,
+    "seq_len": 256,
+    "total_samples": 256,
+    "avg_time_s": 0.03563698340001338,
+    "flows_per_sec": 28.06073647635463,
+    "latency_ms_per_sample": 35.63698340001338
+  },
+  {
+    "batch_size": 4,
+    "seq_len": 32,
+    "total_samples": 128,
+    "avg_time_s": 0.007582150649977848,
+    "flows_per_sec": 527.5548039937305,
+    "latency_ms_per_sample": 1.895537662494462
+  },
+  {
+    "batch_size": 4,
+    "seq_len": 64,
+    "total_samples": 256,
+    "avg_time_s": 0.011866376900047725,
+    "flows_per_sec": 337.08688285334273,
+    "latency_ms_per_sample": 2.9665942250119315
+  },
+  {
+    "batch_size": 4,
+    "seq_len": 128,
+    "total_samples": 512,
+    "avg_time_s": 0.01976370070001394,
+    "flows_per_sec": 202.3912454815296,
+    "latency_ms_per_sample": 4.9409251750034855
+  },
+  {
+    "batch_size": 4,
+    "seq_len": 256,
+    "total_samples": 1024,
+    "avg_time_s": 0.060309236099965344,
+    "flows_per_sec": 66.3248327896214,
+    "latency_ms_per_sample": 15.077309024991337
+  },
+  {
+    "batch_size": 16,
+    "seq_len": 32,
+    "total_samples": 512,
+    "avg_time_s": 0.0077905726499921,
+    "flows_per_sec": 2053.7643019112625,
+    "latency_ms_per_sample": 0.48691079062450626
+  },
+  {
+    "batch_size": 16,
+    "seq_len": 64,
+    "total_samples": 1024,
+    "avg_time_s": 0.015275940600054128,
+    "flows_per_sec": 1047.398678674052,
+    "latency_ms_per_sample": 0.954746287503383
+  },
+  {
+    "batch_size": 16,
+    "seq_len": 128,
+    "total_samples": 2048,
+    "avg_time_s": 0.026572113099996388,
+    "flows_per_sec": 602.1350255355558,
+    "latency_ms_per_sample": 1.6607570687497741
+  },
+  {
+    "batch_size": 16,
+    "seq_len": 256,
+    "total_samples": 4096,
+    "avg_time_s": 0.04877211244997852,
+    "flows_per_sec": 328.05632555714834,
+    "latency_ms_per_sample": 3.0482570281236576
+  },
+  {
+    "batch_size": 64,
+    "seq_len": 32,
+    "total_samples": 2048,
+    "avg_time_s": 0.009892549900041559,
+    "flows_per_sec": 6469.515003379577,
+    "latency_ms_per_sample": 0.15457109218814935
+  },
+  {
+    "batch_size": 64,
+    "seq_len": 64,
+    "total_samples": 4096,
+    "avg_time_s": 0.014550987199982046,
+    "flows_per_sec": 4398.327008361259,
+    "latency_ms_per_sample": 0.22735917499971947
+  },
+  {
+    "batch_size": 64,
+    "seq_len": 128,
+    "total_samples": 8192,
+    "avg_time_s": 0.029184720950024712,
+    "flows_per_sec": 2192.928282905025,
+    "latency_ms_per_sample": 0.4560112648441361
+  },
+  {
+    "batch_size": 64,
+    "seq_len": 256,
+    "total_samples": 16384,
+    "avg_time_s": 0.09001196710005388,
+    "flows_per_sec": 711.0165688175666,
+    "latency_ms_per_sample": 1.4064369859383419
+  }
+]

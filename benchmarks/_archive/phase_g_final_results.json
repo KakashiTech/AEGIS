@@ -1,0 +1,69 @@
+{
+  "phase": "G",
+  "classification": "COGNITIVE RUNTIME PLATFORM",
+  "checks": {
+    "G.1_reproducibility": true,
+    "G.2_persistence": true,
+    "G.3_causal_impact": true,
+    "G.4_long_horizon": true,
+    "G.5_self_organization": true,
+    "G.6_stress_test": true
+  },
+  "n_pass": 6,
+  "n_total": 6,
+  "g1": {
+    "checks": {
+      "max_variance_lt_5pct": true,
+      "all_trials_complete": true,
+      "graphs_different": true
+    },
+    "max_variance_pct": 1.963860817699352
+  },
+  "g2": {
+    "checks": {
+      "hash_preserved": true,
+      "episodes_preserved": true,
+      "nodes_preserved": true,
+      "retrieval_preserved": true
+    },
+    "hash_match": true
+  },
+  "g3": {
+    "checks": {
+      "memory_changes_mamba": true,
+      "retrieval_differs": true,
+      "consistent_effect": true
+    },
+    "avg_delta_mamba": 0.009208300383761525
+  },
+  "g4": {
+    "checks": {
+      "no_crash": true,
+      "zero_nan": true,
+      "zero_inf": true,
+      "latency_bounded": true,
+      "ram_bounded": true
+    },
+    "steps": 6,
+    "nan": 0
+  },
+  "g5": {
+    "checks": {
+      "graph_evolves": true,
+      "entropy_nonzero": true,
+      "edges_exist": true,
+      "replay_active": true
+    },
+    "late_entropy": 3.4011973786541505
+  },
+  "g6": {
+    "checks": {
+      "adversarial_survived": true,
+      "long_context_ok": true,
+      "retrieval_intact": true,
+      "sleep_functional": true,
+      "no_collapse": true
+    },
+    "adversarial_ok": true
+  }
+}

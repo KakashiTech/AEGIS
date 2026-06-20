@@ -1,0 +1,24 @@
+{
+  "intrusion": {
+    "auc": 0.6038345864661654,
+    "accuracy": 0.5525,
+    "f1": 0.5959367945823928,
+    "precision": 0.5665236051502146,
+    "recall": 0.6285714285714286
+  },
+  "text": {
+    "auc": 0.9343434343434345,
+    "accuracy": 0.99,
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0
+  },
+  "long_range": {
+    "auc": 0.5,
+    "accuracy": 0.49,
+    "f1": 0.6577181208053692,
+    "precision": 0.49,
+    "recall": 1.0
+  },
+  "status": "PARTIAL"
+}

@@ -1,0 +1,109 @@
+{
+  "mamba3_training": {
+    "executed": true,
+    "n_steps": 50,
+    "best_lr": 0.01,
+    "lr_results": {
+      "0.01": {
+        "final_loss": 1.6986732482910156,
+        "dead_count": 0
+      },
+      "0.005": {
+        "final_loss": 1.9173781871795654,
+        "dead_count": 0
+      },
+      "0.001": {
+        "final_loss": 1.973862648010254,
+        "dead_count": 0
+      },
+      "0.0005": {
+        "final_loss": 2.0135726928710938,
+        "dead_count": 0
+      },
+      "0.0001": {
+        "final_loss": 1.9924707412719727,
+        "dead_count": 0
+      }
+    },
+    "learning_steps": 50,
+    "dead_steps": 0,
+    "avg_grad_norm": 0.9999999200235375,
+    "avg_param_delta": 0.0010891672466828326,
+    "learning_rate_pct": 1.0,
+    "skipped_nan": 0,
+    "phase_a_passed": true
+  },
+  "mamba3_benchmark": {
+    "128": {
+      "transformer_ms": 0.19359899961273186,
+      "mamba_ms": 72.39202879973163,
+      "ratio_tf_mamba": 0.002674313772146272,
+      "faster_than_transformer": false
+    },
+    "256": {
+      "transformer_ms": 0.3419459993892815,
+      "mamba_ms": 129.69554379997135,
+      "ratio_tf_mamba": 0.00263652851416902,
+      "faster_than_transformer": false
+    },
+    "512": {
+      "transformer_ms": 0.82613080048759,
+      "mamba_ms": 199.98574540040863,
+      "ratio_tf_mamba": 0.004130948427516785,
+      "faster_than_transformer": false
+    }
+  },
+  "e2e_pipeline": {
+    "executed": true,
+    "n_steps": 100,
+    "skipped": 0,
+    "params": 3802724,
+    "elapsed_s": 17.380000591278076,
+    "ms_per_step": 173.80000591278076,
+    "loss_initial": 6.222233390808105,
+    "loss_final": 6.213023090362549,
+    "loss_reduction_pct": 0.1480224200391132,
+    "learning_detected": true
+  },
+  "aegis_evaluation": {
+    "executed": true,
+    "n_samples": 200,
+    "accuracy": 0.995,
+    "precision": 1.0,
+    "recall": 0.99,
+    "f1": 0.9949748743718593,
+    "roc_auc": 1.0,
+    "threshold_configured": 0.5,
+    "threshold_optimal": 0.9504760503768921,
+    "tpr_at_optimal": 1.0,
+    "fpr_at_optimal": 0.0,
+    "note": "Datos sint\u00e9ticos. NO representa rendimiento real."
+  },
+  "mental_rollouts": {
+    "executed": true,
+    "n_steps": 30,
+    "final_mse": 0.7509064674377441,
+    "learning_rate": 1.0
+  },
+  "honest_tests": {
+    "tests": [
+      {
+        "name": "mamba3_gradients",
+        "passed": true,
+        "grad_norm": 5.046926291165176
+      },
+      {
+        "name": "param_updates",
+        "passed": true,
+        "param_delta": 0.008393351919949055
+      },
+      {
+        "name": "loss_convergence",
+        "passed": true,
+        "initial": 12.443907737731934,
+        "final": 1.8281848430633545
+      }
+    ],
+    "all_passed": true
+  }
+}

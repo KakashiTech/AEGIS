@@ -1,0 +1,20 @@
+{
+  "128": {
+    "transformer_ms": 0.19359899961273186,
+    "mamba_ms": 72.39202879973163,
+    "ratio_tf_mamba": 0.002674313772146272,
+    "faster_than_transformer": false
+  },
+  "256": {
+    "transformer_ms": 0.3419459993892815,
+    "mamba_ms": 129.69554379997135,
+    "ratio_tf_mamba": 0.00263652851416902,
+    "faster_than_transformer": false
+  },
+  "512": {
+    "transformer_ms": 0.82613080048759,
+    "mamba_ms": 199.98574540040863,
+    "ratio_tf_mamba": 0.004130948427516785,
+    "faster_than_transformer": false
+  }
+}

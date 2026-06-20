@@ -1,0 +1,66 @@
+{
+  "phase": "B.3",
+  "verdict": "FAIL",
+  "hardware": {
+    "cuda_available": false,
+    "gpu_name": null,
+    "gpu_count": 0,
+    "cuda_version": null,
+    "vram_total_mb": 0,
+    "triton_available": true,
+    "triton_version": "3.5.0",
+    "torch_compile_available": true,
+    "fp16_available": false,
+    "bf16_available": false,
+    "cpu_count": 12,
+    "platform": "linux",
+    "torch_version": "2.10.0+cpu"
+  },
+  "kernel_options": {
+    "mamba_ssm": {
+      "available": false,
+      "error": "No module named 'mamba_ssm'"
+    },
+    "triton": {
+      "available": true,
+      "usable": false,
+      "reason": "CPU-only environment \u2014 Triton requires CUDA GPU"
+    },
+    "torch_compile": {
+      "available": true,
+      "scan_compiled": false,
+      "reason": "Loop not eliminable by TorchInductor on CPU"
+    }
+  },
+  "competitiveness": {
+    "best_slowdown_vs_transformer": 17.361386600381266,
+    "target": 5.0,
+    "met": false
+  },
+  "benchmark": {
+    "lengths": [
+      128,
+      256,
+      512,
+      1024
+    ],
+    "transformer_ms": {
+      "128": 0.146895299985772,
+      "256": 0.29984160009917105,
+      "512": 0.7632382500560198,
+      "1024": 4.713299950253713
+    },
+    "sequential_ms": {
+      "128": 10.947819399734726,
+      "256": 26.572641400161956,
+      "512": 54.49810609970882,
+      "1024": 117.02343819961243
+    },
+    "parallel_ms": {
+      "128": 7.93222699976468,
+      "256": 24.947532700025477,
+      "512": 45.74400329984201,
+      "1024": 81.8294225999125
+    }
+  }
+}

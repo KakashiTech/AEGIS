@@ -1,0 +1,102 @@
+[
+  {
+    "step": 1000,
+    "episodes": 629,
+    "nodes": 16,
+    "edges": 120,
+    "ram_mb": 383.6328125,
+    "latency_ms": 1.8470534999323718,
+    "sleep_count": 5,
+    "nan_events": 0
+  },
+  {
+    "step": 2000,
+    "episodes": 912,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 509.625,
+    "latency_ms": 1.5309123001316038,
+    "sleep_count": 10,
+    "nan_events": 0
+  },
+  {
+    "step": 3000,
+    "episodes": 1038,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 635.1953125,
+    "latency_ms": 1.5665204999095295,
+    "sleep_count": 15,
+    "nan_events": 0
+  },
+  {
+    "step": 4000,
+    "episodes": 1094,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 761.34375,
+    "latency_ms": 1.759906799907185,
+    "sleep_count": 20,
+    "nan_events": 0
+  },
+  {
+    "step": 5000,
+    "episodes": 1118,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 887.65234375,
+    "latency_ms": 1.626855899939983,
+    "sleep_count": 25,
+    "nan_events": 0
+  },
+  {
+    "step": 6000,
+    "episodes": 1128,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 1011.56640625,
+    "latency_ms": 1.6054778002398962,
+    "sleep_count": 30,
+    "nan_events": 0
+  },
+  {
+    "step": 7000,
+    "episodes": 1133,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 1136.890625,
+    "latency_ms": 1.7769820000467007,
+    "sleep_count": 35,
+    "nan_events": 0
+  },
+  {
+    "step": 8000,
+    "episodes": 1136,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 1261.55859375,
+    "latency_ms": 1.6760653001256287,
+    "sleep_count": 40,
+    "nan_events": 0
+  },
+  {
+    "step": 9000,
+    "episodes": 1138,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 1388.23046875,
+    "latency_ms": 1.637223000125232,
+    "sleep_count": 45,
+    "nan_events": 0
+  },
+  {
+    "step": 10000,
+    "episodes": 1138,
+    "nodes": 19,
+    "edges": 123,
+    "ram_mb": 1511.64453125,
+    "latency_ms": 1.6281970000818546,
+    "sleep_count": 50,
+    "nan_events": 0
+  }
+]

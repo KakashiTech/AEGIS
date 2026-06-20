@@ -1,0 +1,15 @@
+{
+  "pre_retention": 0.375,
+  "post_retention": 0.375,
+  "retention_ratio": 1.0,
+  "domain_a": [
+    "aurora",
+    "nebula",
+    "quasar",
+    "pulsar",
+    "cosmos",
+    "galaxy",
+    "eclipse",
+    "zenith"
+  ]
+}

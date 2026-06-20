@@ -1,0 +1,48 @@
+{
+  "trials": {
+    "trial_0": {
+      "final_episodes": 68,
+      "final_nodes": 16,
+      "final_edges": 107,
+      "final_sleep_count": 5,
+      "graph_hash": "51782757feccceba"
+    },
+    "trial_1": {
+      "final_episodes": 68,
+      "final_nodes": 16,
+      "final_edges": 111,
+      "final_sleep_count": 5,
+      "graph_hash": "e16f98806d9c64d8"
+    },
+    "trial_2": {
+      "final_episodes": 68,
+      "final_nodes": 16,
+      "final_edges": 112,
+      "final_sleep_count": 5,
+      "graph_hash": "ee122bf12c20d4b4"
+    }
+  },
+  "variances": {
+    "final_episodes": {
+      "mean": 68.0,
+      "std": 0.0,
+      "variance_pct": 0.0
+    },
+    "final_nodes": {
+      "mean": 16.0,
+      "std": 0.0,
+      "variance_pct": 0.0
+    },
+    "final_edges": {
+      "mean": 110.0,
+      "std": 2.160246899469287,
+      "variance_pct": 1.963860817699352
+    },
+    "final_sleep_count": {
+      "mean": 5.0,
+      "std": 0.0,
+      "variance_pct": 0.0
+    }
+  },
+  "max_variance_pct": 1.963860817699352
+}

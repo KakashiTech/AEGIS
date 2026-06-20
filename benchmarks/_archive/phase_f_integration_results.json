@@ -1,0 +1,67 @@
+{
+  "phase": "F",
+  "classification": "FULLY FUNCTIONAL INTEGRATED SYSTEM",
+  "checks": {
+    "F.1_dataflow": true,
+    "F.2_closed_loop": true,
+    "F.3_memory_reasoning": true,
+    "F.4_generalization": true,
+    "F.5_stability": true,
+    "F.6_adaptation": true
+  },
+  "n_pass": 6,
+  "n_total": 6,
+  "f1": {
+    "checks": {
+      "all_modules_active": true,
+      "mamba_produces_output": true,
+      "memory_stores_episodes": true,
+      "semantic_has_edges": true,
+      "sleep_executed": true,
+      "retrieval_used": true,
+      "rollout_active": true
+    }
+  },
+  "f2": {
+    "checks": {
+      "retrieval_improves": true,
+      "memory_accumulates": true,
+      "tasks_recognized": true
+    },
+    "improvement_pct": 28.571428571428566
+  },
+  "f3": {
+    "checks": {
+      "memory_changes_output": true,
+      "retrieval_differs": true,
+      "memory_has_effect": true
+    },
+    "memory_delta": 0.007462137495167553
+  },
+  "f4": {
+    "checks": {
+      "transfer_gain_ge_0": true,
+      "post_not_worse": true
+    },
+    "transfer_gain": 0.2623185689978088
+  },
+  "f5": {
+    "checks": {
+      "latency_degradation_lt_3x": true,
+      "ram_growth_bounded": true,
+      "zero_nan": true,
+      "no_crash": true,
+      "sleep_active": true
+    },
+    "latency_degradation": 0.8815104706720567
+  },
+  "f6": {
+    "checks": {
+      "adapts_to_shift": true,
+      "graph_reorganizes": true,
+      "recovers_normal": true,
+      "no_collapse": true
+    },
+    "adaptation_slope": 0.0
+  }
+}

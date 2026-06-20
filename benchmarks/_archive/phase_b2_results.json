@@ -1,0 +1,25 @@
+{
+  "phase": "B.2",
+  "status": "PASSED",
+  "associativity_error_A": 6.661338147750939e-16,
+  "associativity_error_c": 3.469446951953614e-18,
+  "basic_tests": {
+    "passed": 1,
+    "total": 1
+  },
+  "randomized_tests": {
+    "passed": 100,
+    "total": 100
+  },
+  "precision": {
+    "float64": {
+      "max_error": 5.551115123125783e-17,
+      "mean_error": 2.9978613585697825e-18
+    },
+    "float32": {
+      "max_error": 2.9802322387695312e-08,
+      "mean_error": 1.6933654478634708e-09
+    }
+  },
+  "mamba3_integration_error": 2.9823160730302334e-05
+}

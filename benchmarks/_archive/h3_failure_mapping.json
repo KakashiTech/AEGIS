@@ -1,0 +1,53 @@
+{
+  "h3_1_poisoning": {
+    "poisoned_in_top_k": 10,
+    "pass": true,
+    "note": "System vulnerable to memory poisoning. No defense mechanism present."
+  },
+  "h3_2_graph_corruption": {
+    "corrupt_nodes": 40,
+    "pass": true,
+    "note": "No input validation on graph nodes. Arbitrary concepts accepted."
+  },
+  "h3_3_sleep_disruption": {
+    "pre_eps": 60,
+    "post_eps": 51,
+    "pre_edges": 60,
+    "post_edges": 60,
+    "pass": true,
+    "note": "Partial sleep cycles possible. No transaction rollback."
+  },
+  "h3_4_retrieval_saturation": {
+    "capacity": 2000,
+    "retrieval_latency_ms": 0.509040355682373,
+    "pass": true,
+    "note": "Linear scan retrieval. No index. O(N) per query."
+  },
+  "h3_5_sequence_overload": {
+    "latency_by_length": {
+      "8": 0.4765033721923828,
+      "16": 0.510859489440918,
+      "32": 0.7863044738769531,
+      "64": 1.1359930038452148,
+      "128": 1.9861459732055664,
+      "256": 3.6972999572753906
+    },
+    "ratio_256_8": 7.759231462023417,
+    "superlinear_growth": false,
+    "pass": true,
+    "note": "Sequential scan in Mamba core. Acceptable O(L) but high constant factor."
+  },
+  "h3_6_noisy_inputs": {
+    "retrieval_clean": 5,
+    "retrieval_noisy": 5,
+    "cosine_similarity": -0.0005988664925098419,
+    "pass": true,
+    "note": "No noise-robust retrieval. Cosine similarity vulnerable to perturbation."
+  },
+  "h3_7_domain_shift": {
+    "domain_a_retrieved": 4,
+    "domain_b_retrieved": 1,
+    "pass": true,
+    "note": "No domain boundaries. Cross-domain interference unchecked."
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "bottleneck": "Python sequential for-loop in SSM scan",
+  "time_in_loop_pct": 95.0,
+  "kernel_launches_original": "O(L) per sequence",
+  "kernel_launches_optimized": "O(L/chunk_size) per sequence",
+  "python_interpreter_overhead": "DOMINANT"
+}
