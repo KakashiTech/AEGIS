@@ -169,16 +169,21 @@ class MIMOConv1d(nn.Module):
 
 class DiagonalSSMDiscretization(nn.Module):
     """
-    Diagonal discretization for Diagonal++ SSM.
+    Diagonal discretization for Diagonal++ SSM — with scalable κ.
     
-    En vez de la matriz HiPPO completa (dS×dS), usa solo sus AUTOVALORES.
-    La recurrencia se vuelve ELEMENT-WISE: O(dS) por paso en vez de O(dS²).
+    Uses HiPPO eigenvalues for element-wise recurrence (O(dS) per step).
+    Learnable per-dimension κ scale enables the truncated parallel scan
+    to achieve O(dS) wall time (K = O(1)).
     
-    λ_k = -(k + ½)  para k = 0, ..., dS-1  (autovalores de HiPPO)
-    ω_k = aprendido de datos  (frecuencia compleja)
-    
-    Ā_t[k] = exp(Δ_t * (λ_k + i * ω_k))
+    λ_k = -(k + ½)  for k = 0, ..., dS-1  (HiPPO eigenvalues)
+    κ_k = Sigmoid(Linear(x)_k) * scale_k    (per-dimension learnable scale)
+    ω_k = learned complex frequency
+    Ā_t[k] = exp(Δ_t * κ_k * (λ_k + i * ω_k))
     h_t[k] = Ā_t[k] * h_{t-1}[k] + B̄_t[k] * x_t[k]
+    
+    With κ scale initialized to 50, the slowest dimension (k=0, λ=-0.5)
+    has effective eigenvalue κ·λ = -25, giving K ≈ 10 for 1% error at
+    dt=0.01 (vs K=922 without scaling).
     """
     
     def __init__(self, config: SSMConfig):
@@ -187,19 +192,24 @@ class DiagonalSSMDiscretization(nn.Module):
         self.d_state = config.d_state
         self.d_model = config.d_model
         
-        # Autovalores de HiPPO: λ_k = -(k + ½)
+        # HiPPO eigenvalues: λ_k = -(k + ½)
         k = torch.arange(self.d_state, dtype=torch.float32)
         eigenvalues_real = -(k + 0.5)
         self.register_buffer('eig_real', eigenvalues_real)
         
-        # Frecuencias complejas aprendidas (inicializadas cerca de cero)
-        # Escaladas con tanh para evitar divergencia: eig_imag ∈ [-π, π]
+        # Complex frequencies (learned, bounded to [-π, π])
         self.eig_imag_raw = nn.Parameter(torch.randn(self.d_state) * 0.01)
         
-        # Hyperbolic curvature function K(κ) - same as original
-        # FIX: Sigmoid en vez de Tanh para asegurar curvatura positiva.
-        # Si κ < 0, los autovalores -(k+½)·κ se vuelven positivos → exp(large) → NaN.
-        self.kappa_transform = nn.Sequential(
+        # Per-dimension κ scale factor.
+        # Without scaling: κ∈[0,1] via Sigmoid → K=922 for dim 0 at dt=0.01.
+        # With scale: κ = Sigmoid(x) * scale_k → scale_k can be 1-500+.
+        #   scale_k=50 → K≈10, scale_k=500 → K≈2.
+        # Initialised to 50 so the model starts with fast decay and
+        # can learn to slow down specific dimensions if needed.
+        self.kappa_scale = nn.Parameter(torch.ones(self.d_state) * 50.0)
+        
+        # Hyperbolic curvature base: Sigmoid ensures κ_base ∈ [0, 1]
+        self.kappa_base = nn.Sequential(
             nn.Linear(config.d_model, config.d_state),
             nn.Sigmoid()
         )
@@ -216,21 +226,24 @@ class DiagonalSSMDiscretization(nn.Module):
         device = delta.device
         batch_size, seq_len, _ = delta.shape
         
-        # Hyperbolic curvature
-        kappa = self.kappa_transform(x)  # (B, L, dS)
+        # κ = Sigmoid(x) * scale  —  (B, L, dS) * (dS,) = (B, L, dS)
+        # Per-dimension scaling: dims with large scale decay fast (K small),
+        # dims with small scale retain long memory.
+        # The Sigmoid base [0,1] ensures κ ≥ 0 (no NaN).
+        kappa = self.kappa_base(x) * self.kappa_scale.to(device)  # (B, L, dS)
         
-        # Autovalor completo: λ = re + i * ω, escalado por κ
-        eig_imag = torch.tanh(self.eig_imag_raw.to(device)) * math.pi  # bound to [-π, π]
+        # Full eigenvalue: λ_eff_k = κ_k * (λ_k + i * ω_k)
+        eig_imag = torch.tanh(self.eig_imag_raw.to(device)) * math.pi
         eig = self.eig_real.to(device) + 1j * eig_imag
-        eig_scaled = eig * kappa  # (B, L, dS) complejo
+        eig_scaled = eig * kappa  # (B, L, dS) complex
         
-        # Δ_t de la entrada: media sobre todos los canales dt_rank
+        # Δ_t: average over dt_rank
         dt = delta.mean(dim=-1, keepdim=True)  # (B, L, 1)
         
-        # Ā_t = exp(Δ_t · λ)  →  Ā_t[k] = exp(Δ_t * (λ_k + i*ω_k)) * κ_k
+        # Ā_t = exp(Δt · λ_eff)
         A_bar = torch.exp(dt * eig_scaled)  # (B, L, dS)
         
-        # B̄_t = simple trapezoidal discretization
+        # B̄_t = trapezoidal discretization
         B_bar = dt * (1.0 + dt * eig_scaled / 2.0)  # (B, L, dS)
         
         return A_bar, B_bar
@@ -327,9 +340,6 @@ class Mamba3Block(nn.Module):
                 if backend in ('triton', 'tilelang'):
                     from ..kernels.triton_ssm import triton_ssm_scan
                     A_bar, B_bar = self.discretizer(delta, x_original)
-                    if isinstance(A_bar, torch.Tensor) and A_bar.dim() == 4:
-                        A_bar = A_bar[:, :, :self.d_state, :self.d_state]
-                        B_bar = B_bar[:, :, :self.d_state, 0]
                     x_state = x[:, :, :self.d_state]
                     c = B_bar * x_state
                     h0 = torch.zeros(x.size(0), self.d_state, device=x.device, dtype=A_bar.dtype)

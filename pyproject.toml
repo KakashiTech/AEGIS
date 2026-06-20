@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "aegis"
+version = "0.2.0"
+description = "Continuous-Time Foundation Engine with Diagonal++ SSM"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "KakashiTech", email = "mrtech07@outlook.com" },
+]
+keywords = ["ssm", "state-space-model", "deep-learning", "hippo", "mamba"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+"Source" = "https://github.com/KakashiTech/AEGIS"
+"Paper" = "https://github.com/KakashiTech/AEGIS/blob/main/PAPER_DIAGONAL_SSM.md"
+"Claims Register" = "https://github.com/KakashiTech/AEGIS/blob/main/CLAIMS_EVIDENCE.md"

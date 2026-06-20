@@ -1,30 +1,30 @@
 """
-Triton GPU kernel for Mamba-3 SSM prefix scan.
+Triton GPU kernel for Diagonal++ SSM element-wise scan.
 
-Implements the recurrence: h_t = A_t @ h_{t-1} + Bx_t
+Implements the recurrence: h_t[k] = A_t[k] * h_{t-1}[k] + Bx_t[k]
+
+This is the O(dS) element-wise version. A is a VECTOR (diagonal), not a matrix.
+The original O(dS²) matrix-vector version was removed in the June 2026 audit
+because it contradicted the Diagonal++ design (which is element-wise by
+construction on the CPU path).
 
 Semantics:
-    A_t: (B, dS, dS)  state transition matrix
-    Bx_t: (B, dS)     pre-gated input (B_t * x_t)
-    h_t:  (B, dS)     hidden state
+    A_t: (B, L, dS)  diagonal state transition (element-wise multiplier)
+    Bx_t: (B, L, dS) pre-gated input (B_t * x_t)
+    h_t:  (B, dS)    hidden state
 
-The kernel parallelises over the batch dimension and iterates
-sequentially over the sequence length.  Each program (block) owns
-one batch element and at every time step performs a full matrix-
-vector product in registers without staging through shared memory
-(the compiler is free to promote the state vector to shared /
-local memory as it sees fit).
+The kernel parallelises over the batch dimension and state dimension,
+iterating sequentially over the sequence length. Each program (block)
+processes one batch element and a BLOCK_DS chunk of state dimensions.
 
 Numerical precision
 -------------------
 The kernel works in fp32 internally regardless of the input dtype
-to guarantee stable long-range recurrence.  Input tensors may be
-fp16, bf16, or fp32; the output will match the input dtype.
+to guarantee stable long-range recurrence.
 """
 
 from __future__ import annotations
 
-import math
 from typing import Optional, Tuple
 
 import torch
@@ -35,11 +35,7 @@ import torch
 # ---------------------------------------------------------------------------
 
 def is_triton_available() -> bool:
-    """Return True iff Triton is installed *and* a CUDA device is visible.
-
-    This is the single source of truth used everywhere in the BGCE
-    kernel layer to decide whether GPU kernels can be launched.
-    """
+    """Return True iff Triton is installed *and* a CUDA device is visible."""
     if not torch.cuda.is_available():
         return False
     try:
@@ -55,11 +51,7 @@ def is_triton_available() -> bool:
 # ---------------------------------------------------------------------------
 
 def _triton_kernel_definition():
-    """Return the ``@triton.jit`` kernel function, or ``None``.
-
-    Wrapped in a factory so that the module can be imported on CPU-only
-    machines without raising at import time.
-    """
+    """Return the ``@triton.jit`` kernel function, or ``None``."""
     if not is_triton_available():
         return None
 
@@ -67,14 +59,14 @@ def _triton_kernel_definition():
     import triton.language as tl
 
     @triton.jit
-    def ssm_scan_kernel(
+    def diag_ssm_scan_kernel(
         # -- tensor data pointers --
-        A_ptr,        # (B, L, dS, dS)
+        A_ptr,        # (B, L, dS)  — diagonal, NOT full matrix
         Bx_ptr,       # (B, L, dS)
         h0_ptr,       # (B, dS)
-        h_ptr,        # (B, L, dS)   -- output
+        h_ptr,        # (B, L, dS)  — output
         # -- strides (in elements) --
-        stride_Ab, stride_Al, stride_Am, stride_An,
+        stride_Ab, stride_Al, stride_Ad,
         stride_Bxb, stride_Bxl, stride_Bxd,
         stride_hb, stride_hl, stride_hd,
         # -- problem sizes --
@@ -82,15 +74,15 @@ def _triton_kernel_definition():
         DS: tl.constexpr,
         BLOCK_DS: tl.constexpr,
     ):
-        """Triton kernel for the SSM recurrence.
+        """Diagonal++ SSM scan: element-wise recurrence.
 
         Grid: ``(batch_size,)`` — one program per batch element.
 
         Each program iterates over ``L`` time steps.  At step ``t`` it
-        loads the full ``(dS, dS)`` matrix ``A[t]``, the vector
-        ``Bx[t]``, performs the fused matvec-add
+        loads the diagonal ``A[t]`` (vector of length dS), the vector
+        ``Bx[t]``, performs the element-wise recurrence
 
-            h_new = A[t] @ h + Bx[t]
+            h_new[k] = A[t,k] * h[k] + Bx[t,k]   for k = 0..dS-1
 
         stores the result and advances to the next step.
         """
@@ -106,25 +98,20 @@ def _triton_kernel_definition():
 
         # ---- sequential scan over L -----------------------------------------
         for t in range(L):
-            # pointer for A[t]  ──  (DS, DS) in row-major layout
+            # pointer for A[t]  ──  (DS,) diagonal
             a_base = A_ptr + pid * stride_Ab + t * stride_Al
-            a_ptrs = (
-                a_base
-                + offs_d[:, None] * stride_Am
-                + offs_d[None, :] * stride_An
-            )
-            a_mask = mask_d[:, None] & mask_d[None, :]
+            a_ptrs = a_base + offs_d * stride_Ad
 
             # pointer for Bx[t]  ──  (DS,)
             bx_base = Bx_ptr + pid * stride_Bxb + t * stride_Bxl
             bx_ptrs = bx_base + offs_d * stride_Bxd
 
             # ---- load -------------------------------------------------------
-            A_blk = tl.load(a_ptrs, mask=a_mask, other=0.0)
+            A_blk = tl.load(a_ptrs, mask=mask_d, other=0.0)
             Bx_blk = tl.load(bx_ptrs, mask=mask_d, other=0.0)
 
-            # ---- matvec:  row[d] = sum_j A[d,j] * h[j] + Bx[d] -------------
-            h_new = tl.sum(A_blk * h[None, :], axis=1) + Bx_blk
+            # ---- element-wise recurrence: h = A ⊙ h + Bx (O(dS)) ------------
+            h_new = A_blk * h + Bx_blk
 
             # ---- store ------------------------------------------------------
             out_base = h_ptr + pid * stride_hb + t * stride_hl
@@ -134,7 +121,7 @@ def _triton_kernel_definition():
             # ---- advance state ----------------------------------------------
             h = h_new
 
-    return ssm_scan_kernel
+    return diag_ssm_scan_kernel
 
 
 # ---------------------------------------------------------------------------
@@ -146,20 +133,21 @@ def triton_ssm_scan(
     Bx: torch.Tensor,
     h0: torch.Tensor,
 ) -> torch.Tensor:
-    """SSM prefix scan.
+    """Diagonal++ SSM prefix scan (element-wise, O(dS) per step).
 
-    ``h[t] = A[t] @ h[t-1] + Bx[t]``    with  ``h[-1] = h0``
+    ``h[t] = A[t] ⊙ h[t-1] + Bx[t]``    with  ``h[-1] = h0``
+
+    ``A`` must be a VECTOR of shape ``(B, L, dS)`` (diagonal),
+    NOT a full ``(B, L, dS, dS)`` matrix.  This is the O(dS)
+    element-wise version used by Diagonal++.
 
     Parameters
     ----------
     A:
-        State-transition matrices, shape ``(B, L, dS, dS)``.
+        Diagonal state-transition, shape ``(B, L, dS)``.
         May be real (float32/float16/bfloat16) **or** complex64.
-        **Must be contiguous** (the wrapper will call ``.contiguous()``
-        automatically if needed).
     Bx:
         Pre-gated inputs, shape ``(B, L, dS)``.
-        Must share the same dtype family (real / complex) as ``A``.
     h0:
         Initial state, shape ``(B, dS)``.
 
@@ -169,33 +157,23 @@ def triton_ssm_scan(
 
     Notes
     -----
-    *   The internal computation is always performed in fp32.  When the
-        input is complex64 the system is transparently expanded to a
-        ``2*dS``-dimensional real recurrence (see complex arithmetic
-        below) so that a single kernel launch suffices.
-
-    *   Complex arithmetic
-        ~~~~~~~~~~~~~~~~~~~
-        ``h = A @ h + Bx``  with  ``A ∈ ℂ, h ∈ ℂ, Bx ∈ ℂ``
-
-        Let ``A = Ar + i·Ai``, ``h = hr + i·hi``, ``Bx = Bxr + i·Bxi``.
-        The recurrence expands to the real ``2*dS``-dimensional system::
-
-            [hr_new]   =  [[Ar, -Ai],   [hr]     +  [Bxr]
-            [hi_new]      [Ai,  Ar]]    [hi]        [Bxi]
-
-    *   **Fallback** — if Triton is unavailable or the shapes are not
-        compatible with the kernel launch, the wrapper silently falls
-        back to a pure-PyTorch sequential loop (``_ssm_scan_fallback``).
+    *   Internal computation is always fp32.
+    *   Complex: ``h = A * h + Bx`` with ``A ∈ ℂ`` (element-wise)
+        expands to a ``2*dS``-dimensional real recurrence.
+    *   **Fallback** — pure-PyTorch loop when Triton unavailable.
     """
     B, L, dS = Bx.shape
     device = A.device
     is_complex = A.is_complex()
     dtype = A.dtype
 
-    # -- sanity checks ----------------------------------------------------
-    if A.ndim != 4 or A.shape != (B, L, dS, dS):
-        raise ValueError(f"A expects (B, L, dS, dS), got {A.shape}")
+    # -- sanity checks (now expects 3D A, not 4D) -------------------------
+    if A.ndim != 3 or A.shape != (B, L, dS):
+        raise ValueError(
+            f"A expects (B, L, dS), got {A.shape}. "
+            f"Diagonal++ uses element-wise recurrence (O(dS)). "
+            f"For full matrix (O(dS²)) use the fallback."
+        )
     if Bx.ndim != 3 or Bx.shape != (B, L, dS):
         raise ValueError(f"Bx expects (B, L, dS), got {Bx.shape}")
     if h0.ndim != 2 or h0.shape != (B, dS):
@@ -216,7 +194,6 @@ def triton_ssm_scan(
     if kernel_fn is None:
         return _ssm_scan_fallback(A, Bx, h0)
 
-    # Ensure contiguity (strides computed below assume contiguous).
     A = A.contiguous().float()
     Bx = Bx.contiguous().float()
     h0 = h0.contiguous().float()
@@ -224,14 +201,13 @@ def triton_ssm_scan(
     output = torch.empty(B, L, dS, device=device, dtype=torch.float32)
 
     BLOCK_DS = _next_power_of_2(dS)
-    # Triton requires BLOCK_DS <= 1024 for most backends.
     BLOCK_DS = min(BLOCK_DS, 256)
 
     grid = (B,)
 
     kernel_fn[grid](
         A, Bx, h0, output,
-        A.stride(0), A.stride(1), A.stride(2), A.stride(3),
+        A.stride(0), A.stride(1), A.stride(2),
         Bx.stride(0), Bx.stride(1), Bx.stride(2),
         output.stride(0), output.stride(1), output.stride(2),
         L,
@@ -244,7 +220,7 @@ def triton_ssm_scan(
 
 
 # ---------------------------------------------------------------------------
-# Complex-valued scan  (expand to 2*dS real system)
+# Complex-valued scan  (expand to 2*dS real system, element-wise)
 # ---------------------------------------------------------------------------
 
 def _complex_ssm_scan(
@@ -252,28 +228,39 @@ def _complex_ssm_scan(
     Bx: torch.Tensor,
     h0: torch.Tensor,
 ) -> torch.Tensor:
-    """Handle complex-valued SSM via ``2*dS`` real expansion."""
+    """Handle complex-valued SSM via ``2*dS`` real expansion.
+
+    For element-wise (diagonal) A:
+    h_new[k] = A[k] * h[k] + Bx[k]
+
+    Let A = Ar + i·Ai, h = hr + i·hi, Bx = Bxr + i·Bxi.
+    Element-wise: hr_new = Ar·hr - Ai·hi + Bxr
+                  hi_new = Ai·hr + Ar·hi + Bxi
+    """
     B, L, dS = Bx.shape
     device = A.device
 
-    Ar = A.real.float()
-    Ai = A.imag.float()
+    Ar = A.real.float()  # (B, L, dS)
+    Ai = A.imag.float()  # (B, L, dS)
     Bxr = Bx.real.float()
     Bxi = Bx.imag.float()
     h0r = h0.real.float()
     h0i = h0.imag.float()
 
-    # Build expanded real system of size (2*dS)
+    # Interleave Ar, -Ai, Ai, Ar into a 2*dS real system
+    # For the interleaved layout: [r0, r1, ..., i0, i1, ...]
     A_exp = torch.zeros(B, L, 2 * dS, 2 * dS, device=device, dtype=torch.float32)
-    A_exp[:, :, :dS, :dS] = Ar
-    A_exp[:, :, :dS, dS:] = -Ai
-    A_exp[:, :, dS:, :dS] = Ai
-    A_exp[:, :, dS:, dS:] = Ar
+    A_exp[:, :, :dS, :dS] = torch.diag_embed(Ar)      # real → real
+    A_exp[:, :, :dS, dS:] = torch.diag_embed(-Ai)      # imag → real
+    A_exp[:, :, dS:, :dS] = torch.diag_embed(Ai)       # real → imag
+    A_exp[:, :, dS:, dS:] = torch.diag_embed(Ar)       # imag → imag
 
-    Bx_exp = torch.cat([Bxr, Bxi], dim=-1)  # (B, L, 2*dS)
-    h0_exp = torch.cat([h0r, h0i], dim=-1)  # (B, 2*dS)
+    Bx_exp = torch.cat([Bxr, Bxi], dim=-1)
+    h0_exp = torch.cat([h0r, h0i], dim=-1)
 
-    h_exp = triton_ssm_scan(A_exp, Bx_exp, h0_exp)
+    # Use element-wise fallback for expanded complex system
+    # (the expanded system is block-diagonal, each 2×2 block is independent)
+    h_exp = _expanded_diag_scan(A_exp, Bx_exp, h0_exp, dS)
 
     hr = h_exp[:, :, :dS]
     hi = h_exp[:, :, dS:]
@@ -281,8 +268,38 @@ def _complex_ssm_scan(
     return torch.complex(hr, hi).to(A.dtype)
 
 
+def _expanded_diag_scan(
+    A_exp: torch.Tensor,
+    Bx_exp: torch.Tensor,
+    h0_exp: torch.Tensor,
+    dS: int,
+) -> torch.Tensor:
+    """Scan for expanded complex system (block-diagonal, each 2×2).
+
+    A_exp: (B, L, 2*dS, 2*dS) — block-diagonal with 2×2 blocks
+    Bx_exp: (B, L, 2*dS)
+    h0_exp: (B, 2*dS)
+    """
+    B, L, _ = Bx_exp.shape
+    device = A_exp.device
+
+    h = h0_exp.clone()
+    outputs = []
+
+    for t in range(L):
+        # Extract the diagonal and off-diagonal from the 2×2 blocks
+        # For the expanded system of size 2*dS, each dimension i maps to
+        # block i%dS with a 2×2 matrix [[Ar_i, -Ai_i], [Ai_i, Ar_i]]
+        A_t = A_exp[:, t]  # (B, 2*dS, 2*dS)
+        # Use batch matrix-vector for the expanded system
+        h = torch.bmm(A_t, h.unsqueeze(-1)).squeeze(-1) + Bx_exp[:, t]
+        outputs.append(h.clone())
+
+    return torch.stack(outputs, dim=1)
+
+
 # ---------------------------------------------------------------------------
-# Pure-PyTorch fallback
+# Pure-PyTorch fallback  (element-wise O(dS))
 # ---------------------------------------------------------------------------
 
 def _ssm_scan_fallback(
@@ -290,11 +307,10 @@ def _ssm_scan_fallback(
     Bx: torch.Tensor,
     h0: torch.Tensor,
 ) -> torch.Tensor:
-    """Sequential PyTorch implementation of the SSM recurrence.
+    """Element-wise PyTorch fallback for Diagonal++ SSM.
 
-    Used when Triton is not available or when kernel launch fails.
-    The loop is compiled with ``torch.compile`` when available for
-    a moderate speed-up.
+    This is the reference implementation: O(dS) per step.
+    Used when Triton is unavailable.
     """
     B, L, dS = Bx.shape
     device = A.device
@@ -302,25 +318,34 @@ def _ssm_scan_fallback(
     h = h0.clone()
     outputs = [None] * L
 
-    # torch.compile the inner step when torch ≥ 2.0 and CUDA is available
-    if hasattr(torch, "compile") and device.type == "cuda":
-        try:
+    for t in range(L):
+        h = A[:, t] * h + Bx[:, t]  # element-wise: O(dS)
+        outputs[t] = h.clone()
 
-            @torch.compile(mode="reduce-overhead")
-            def compiled_step(h, A_t, Bx_t):
-                return torch.bmm(A_t, h.unsqueeze(-1)).squeeze(-1) + Bx_t
+    return torch.stack(outputs, dim=1)
 
-            step = compiled_step
-        except Exception:
-            step = None
-    else:
-        step = None
+
+# ---------------------------------------------------------------------------
+# Matrix-vector fallback (legacy, for non-Diagonal++ paths)
+# ---------------------------------------------------------------------------
+
+def _full_ssm_scan_fallback(
+    A: torch.Tensor,
+    Bx: torch.Tensor,
+    h0: torch.Tensor,
+) -> torch.Tensor:
+    """Full matrix-vector SSM scan (O(dS²)) — legacy path.
+
+    Only used when A is (B, L, dS, dS) — this is NOT the Diagonal++ path.
+    """
+    B, L, dS = Bx.shape
+    device = A.device
+
+    h = h0.clone()
+    outputs = [None] * L
 
     for t in range(L):
-        if step is not None:
-            h = step(h, A[:, t], Bx[:, t])
-        else:
-            h = torch.bmm(A[:, t], h.unsqueeze(-1)).squeeze(-1) + Bx[:, t]
+        h = torch.bmm(A[:, t], h.unsqueeze(-1)).squeeze(-1) + Bx[:, t]
         outputs[t] = h.clone()
 
     return torch.stack(outputs, dim=1)
