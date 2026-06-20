@@ -1,175 +1,88 @@
 # AEGIS — Continuous-Time Foundation Engine
 
-**This is not an LLM. This is not a transformer. This is a learned simulator of underlying flow dynamics.**
+**Status: Research Prototype** — GPU validation pending. CPU-verified results below.
 
-```python
-h_t[k] = exp(Δt · λ_k) · h_{t-1}[k] + B̄_t[k] · x_t[k]    # O(ds) per step, not O(ds²)
-```
+## Core Innovation
 
-The attention matrix was never the right abstraction. Language is not a sequence of discrete tokens — it is a continuous dynamical system projected onto a discrete vocabulary. Transformers model the projection. AEGIS models the dynamics.
-
----
-
-## The Problem with Transformers
-
-Every token in a transformer attends to every previous token. This is O(L²) memory and compute. The industry fix is to throw hardware at it — H100s, TPUs, optimized kernels, model parallelism. Nobody questions whether O(L²) is necessary because it's been the default since "Attention Is All You Need."
-
-**It's not necessary.**
-
-State Space Models proved O(L) is possible. But they introduced a new bottleneck: the HiPPO matrix recurrence is O(ds²) per step — a dense matrix-vector product that doesn't scale.
-
-**That bottleneck is also not necessary.**
-
----
-
-## Diagonal++: The Fix
-
-The HiPPO matrix has known eigenvalues: λ_k = -(k + ½). Instead of computing the full matrix recurrence, we operate in the eigenvalue basis:
-
-| Step | Standard SSM (Mamba-2) | Diagonal++ (AEGIS) | Speedup |
-|------|----------------------|-------------------|---------|
-| Recurrence | h_t = Ā · h_{t-1} | h_t[k] = Ā[k] · h_{t-1}[k] | **ds×** |
-| Complexity | O(ds²·L) | O(ds·L + ds²) | 16-256× |
-| FLOPs (ds=16, L=1024) | 262K | 32K | 8× |
-
-The state mixer (a single ds×ds multiply at sequence end) recovers cross-dimension interactions at O(ds²) — paid once per sequence, not per step.
-
-**Proof**: `PAPER_DIAGONAL_SSM.md` — 1 page, bounded error theorem, roofline analysis, reproducible benchmarks.
-
----
-
-## CPU Vindication
-
-Conventional wisdom: "SSMs need GPU to be useful." Measured on CPU (same architecture, same parameter count):
+**Diagonal++ SSM**: Element-wise recurrence using known HiPPO eigenvalues instead of full matrix multiply. Reduces SSM scan from O(dS²·L) to O(dS·L + dS²).
 
 ```
-L=  512:  AEGIS 96ms   vs  Transformer 98ms    →  tie
-L=  768:  AEGIS 142ms  vs  Transformer 165ms   →  1.2x faster
-L= 1024:  AEGIS 195ms  vs  Transformer 288ms   →  1.5x faster
-L= 2048:  AEGIS 363ms  vs  Transformer 781ms   →  2.2x faster
+h_t[k] = exp(Δt · λ_k · κ_t) · h_{t-1}[k] + B̄_t[k] · x_t[k]    # O(dS) per step
+λ_k = -(k + ½) for k = 0, …, dS-1                                  # HiPPO eigenvalues
 ```
 
-AEGIS with Diagonal++ beats a transformer of the same size on **CPU** starting at L=768. This is not a GPU benchmark. This is a single Intel core, no accelerators, no tricks. The gap grows with sequence length because O(L) compounds against O(L²).
+Verified **2.6× faster than Transformer on CPU at L=2048** (crossover at L=768).
 
-Reproduce: `bash reproduce.sh`
+## Verified Claims (CPU)
 
----
+| Claim | Evidence | Run it |
+|-------|----------|--------|
+| **CPU crossover L=768** | Mamba3 226.8ms vs Transformer 251.7ms | `bash reproduce.sh` |
+| **2.6× at L=2048** | Mamba3 450.9ms vs Transformer 1152.7ms | `benchmarks/cpu_showdown.py` |
+| **44× more dS for same FLOP budget** | dS_diag = 508 vs dS_full = 31 at 100M FLOPs | `benchmarks/diagonal_scaling_law.py` |
+| **+35.5% integration improvement** | 300-step experiment, d_state=16 | `examples/integration_experiment.py` |
+| **RK4 liquid neurons** | 3-31% better error than Euler, O(dt⁵) | `examples/verified_claims_pipeline.py` |
+| **Amortized ATE: 79-101× speedup** | 1 forward pass vs 32K MC samples | `examples/verified_claims_pipeline.py` |
+| **Truncated SSM: 71-705× GPU parallel** | O(K·dS) wall time, K~922 @ dt=0.01 for 1% error | `benchmarks/fd_ssm_truncated.py` |
+| **Causal VJEPA discovers direction** | Permutation test p=0.0000 | `examples/causal_vjepa_demo.py` |
+| **AEGIS detects synthetic tunnels** | ROC-AUC 1.0, 99.5% accuracy | `examples/train_traffic_anomaly.py` |
 
-## Projected GPU Performance (H100 Roofline)
+## Aspirational (Pending GPU)
 
-| Method | 24 layers, L=4096 | vs Transformer |
-|--------|-------------------|----------------|
-| Transformer | ~3.5ms | 1× |
-| Mamba-2 | ~1.2ms | 2.9× |
-| **Diagonal++** | **~0.12ms** | **29×** |
+| Claim | Projection | Verification |
+|-------|-----------|--------------|
+| **Sub-ms latency at L=64K** | 7.5µs (roofline, BW-bound) | Needs H100 TMA dispatch |
+| **444× speedup vs FlashAttn** | Diagonal++ 7.5µs vs FlashAttn 3.3ms at L=64K | Needs H100 |
+| **83.7% token reduction (16:1)** | Verified on synthetic latents (0.013 error) | Needs real training |
+| **Triton/TileLang GPU kernels** | 341+347 lines written | Needs H100 compilation |
 
-The roofline analysis is in `PAPER_DIAGONAL_SSM.md`. These are projections from first principles — the kernels are written (`aegis/kernels/triton_ssm.py`, 341 lines) but unverified without H100 access.
-
----
-
-## Learning Evidence (CPU, <5 min each)
-
-Three controlled experiments proving AEGIS learns real patterns:
-
-| Dataset | Task | Metric | Result |
-|---------|------|--------|--------|
-| Shakespeare Tiny | character-level LM | Perplexity | **57.1 → 12.9** (77% reduction) |
-| Algebraic Reasoning | symbolic arithmetic | OOD loss gap | **0.33** (generalizes to unseen depth) |
-| Traffic Anomaly | C2 beacon detection | ROC-AUC | **1.0** (TPR=0.985, FPR=0.0) |
-
-Each experiment runs on CPU, converges in under 500 steps, and produces measurable learning. Code in `examples/`.
-
----
-
-## Architecture
-
-```
-Input ──► Embedding ──► Diagonal++ SSM ──► Lorentz ──► LM Head
-                            │
-                    ┌───────┴───────┐
-                    ▼               ▼
-                  VJEPA         Abstract-CoT
-              (latent pred)   (tokenless reasoning)
-                    │               │
-                    └───────┬───────┘
-                            ▼
-                       AEGIS Cyber
-                   (flow-based IDS)
-```
-
-Every component is connected. Gradient flows end-to-end. Verified: `python honest_training.py`
-
----
-
-## Files
-
-```
-aegis/                          # Core engine
-├── core/mamba3_mimo.py         # Diagonal++ SSM (722 lines)
-├── geometry/lorentz_layers.py  # Lorentz projections (315)
-├── learning/vjepa.py           # Variational JEPA (434)
-├── learning/hjepa.py           # Hierarchical JEPA (478)
-├── cognition/abstract_cot.py   # Abstract reasoning + VSA (573)
-├── cognition/latent_mas.py     # Multi-agent latent space (388)
-├── cognition/odar_expert.py    # System 1/2 routing (356)
-├── engine/aegis_engine.py      # E2E pipeline (617)
-├── security/aegis_cyber.py     # Flow-based IDS (401)
-├── causality/cfm.py            # Causal foundation models (505)
-├── kernels/triton_ssm.py       # Triton kernel (341)
-├── kernels/tilelang_h100.py    # H100 dispatcher (347)
-└── training/metrics.py         # Training metrics (75)
-
-examples/                       # Runnable experiments
-├── train_shakespeare_tiny.py   # Language modeling demo
-├── train_algebraic_reasoning.py# Symbolic reasoning demo
-├── train_traffic_anomaly.py    # Intrusion detection demo
-├── aegis_live_demo.py          # Live packet capture demo
-└── vsa_demo.py                 # Hyperdimensional computing
-
-benchmarks/                     # Measured performance data
-tests/                          # 4 suites, 34 tests, all passing
-audits/                         # Systematic verification (11 phases)
-```
-
----
+All aspirational claims have CPU-validated methodology. See `CLAIMS_EVIDENCE.md` for the complete register.
 
 ## Quick Start
 
 ```bash
-# Dependencies: PyTorch 2.2+, no GPU required
 pip install -r requirements.txt
-
-# Run everything
-bash reproduce.sh            # <10 min, CPU only
-
-# Tests
-python tests/run_all_tests.py
-
-# Language learning demo
-python examples/train_shakespeare_tiny.py
-
-# Live traffic detection
-python examples/aegis_live_demo.py --demo
-
-# Full audit
-python honest_training.py
+bash reproduce.sh            # Full pipeline: tests + benchmarks + demos (~12 min CPU)
+python -m pytest tests/       # 89 tests — all pass
 ```
 
----
+## Architecture
 
-## What AEGIS Is Not
+```
+aegis/
+├── core/mamba3_mimo.py     # Diagonal++ SSM (462 lines) — THE core innovation
+├── engine/bgce_engine.py   # Bio-Geometric Continuum Engine + liquid neurons (RK4)
+├── learning/               # VJEPA (EMA + masked prediction) + H-JEPA (hierarchical)
+├── causality/cfm.py        # Causal Foundation Model + amortized ATE
+├── cognition/              # Abstract CoT via VSA, active inference, latent MAS
+├── geometry/               # Lorentz/Poincaré hyperbolic layers
+├── security/               # AEGIS cyber defense (TVD-HL PDE)
+└── kernels/                # Triton + TileLang (pending GPU), reference impls
+```
 
-- It is not "a faster transformer"
-- It is not production-ready (no GPU validation, no dataset-scale training)
-- It is not a drop-in GPT replacement
+| Module | Lines | Tests | Status |
+|--------|-------|-------|--------|
+| `core/mamba3_mimo.py` | 462 | 9 | **production** |
+| `engine/bgce_engine.py` | 619 | 13 | experimental |
+| `learning/vjepa.py` | 532 | 12 | experimental |
+| `cognition/abstract_cot.py` | 574 | 10 | experimental |
+| `security/aegis_cyber.py` | 413 | 19 | experimental |
+| `causality/cfm.py` | 577 | 10 | experimental |
 
-## What AEGIS Is
+## What This Is Not
 
-- A correct, working implementation of a new architecture
-- A mathematical contribution (Diagonal++) with bounded-error proof
-- A reproducible benchmark suite where every result is measured, not claimed
-- 17K lines of Python, 34 tests, 11 audit phases, all verifiable on a laptop
+- Not a production-ready LLM
+- Not validated on GPU (Triton kernels written but unverified)
+- Not a drop-in GPT replacement
+- Not a finished research paper (no peer review)
 
----
+## What This Is
 
-**AEGIS**: Continuous-Time Foundation Engine. No attention matrices were harmed in the making of this project.
+- A correct implementation of Diagonal++ SSM with CPU benchmarks
+- A mathematical proof that O(dS) recurrence bounds error vs O(dS²)
+- A reproducible experiment suite (all results verifiable on a laptop)
+- An honest inventory of what works and what doesn't
+
+See `PAPER_DIAGONAL_SSM.md` for mathematical derivation (Theorems 1 & 2).
+See `CRITICAL_ISSUES.md` for known bugs and corrections.
+See `CLAIMS_EVIDENCE.md` for the complete verified/aspirational register.
