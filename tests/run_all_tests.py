@@ -1,74 +1,51 @@
 #!/usr/bin/env python3
-"""
-Ejecutar todos los tests del BGCE
-"""
+"""Run all BGCE test suites."""
 
-import sys
-import os
+import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import subprocess
 
 
 def run_test(test_file):
-    """Ejecutar un archivo de tests"""
-    print(f"\n{'='*80}")
-    print(f"Ejecutando: {test_file}")
-    print('='*80)
-    
-    result = subprocess.run(
-        [sys.executable, test_file],
-        capture_output=False,
-        text=True
-    )
-    
+    print(f"\n{'='*70}")
+    print(f"Running: {test_file}")
+    print('='*70)
+    result = subprocess.run([sys.executable, test_file], capture_output=False, text=True)
     return result.returncode == 0
 
 
 def main():
-    print("=" * 80)
-    print("MOTOR BGCE - SUITE DE TESTS")
-    print("=" * 80)
+    print("=" * 70)
+    print("BGCE TEST SUITE")
+    print("=" * 70)
     
-    tests = [
-        'test_mamba3.py',
-        'test_lorentz.py',
-        'test_vjepa.py',
-        'test_vsa.py'
-    ]
+    test_dir = os.path.dirname(__file__)
+    tests = sorted(f for f in os.listdir(test_dir) if f.startswith('test_') and f.endswith('.py'))
     
     results = {}
-    
     for test in tests:
-        test_path = os.path.join(os.path.dirname(__file__), test)
-        if os.path.exists(test_path):
-            results[test] = run_test(test_path)
-        else:
-            print(f"No se encontró: {test}")
-            results[test] = False
+        test_path = os.path.join(test_dir, test)
+        results[test] = run_test(test_path)
     
-    # Resumen
-    print("\n" + "=" * 80)
-    print("RESUMEN DE TESTS")
-    print("=" * 80)
-    
+    print("\n" + "=" * 70)
+    print("SUMMARY")
+    print("=" * 70)
     for test, passed in results.items():
-        status = "✓ PASÓ" if passed else "✗ FALLÓ"
-        print(f"  {test:30s} {status}")
+        status = "PASS" if passed else "FAIL"
+        print(f"  {test:40s} {status}")
     
     total = len(results)
-    passed = sum(results.values())
+    passed_count = sum(results.values())
+    print(f"\nTotal: {passed_count}/{total} tests passed")
     
-    print(f"\nTotal: {passed}/{total} tests pasaron")
-    
-    if passed == total:
-        print("\n✓ Todos los tests pasaron!")
+    if passed_count == total:
+        print("\nAll tests passed!")
         return 0
     else:
-        print(f"\n✗ {total - passed} test(s) fallaron")
+        print(f"\n{total - passed_count} test(s) failed")
         return 1
 
 
 if __name__ == '__main__':
-    exit_code = main()
-    sys.exit(exit_code)
+    sys.exit(main())

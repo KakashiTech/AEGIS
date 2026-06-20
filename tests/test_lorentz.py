@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests unitarios para capas de Lorentz
+Unit tests for Lorentz layers
 """
 
 import sys
@@ -18,14 +18,14 @@ from aegis.geometry.lorentz_layers import (
 
 
 def test_lorentz_manifold():
-    """Test de variedad de Lorentz"""
+    """Test Lorentz manifold"""
     manifold = LorentzManifold(curvature=1.0, dim=4)
     
     # Crear vectores en Lorentz (componente temporal dominante)
     x = torch.tensor([[3.0, 1.0, 1.0, 1.0, 1.0]])
     y = torch.tensor([[2.5, 0.5, 0.5, 0.5, 0.5]])
     
-    # Proyección
+    # Projection
     x_proj = manifold.proj(x)
     y_proj = manifold.proj(y)
     
@@ -39,7 +39,7 @@ def test_lorentz_manifold():
 
 
 def test_minkowski_dot():
-    """Test de producto interno de Minkowski"""
+    """Test Minkowski dot product"""
     manifold = LorentzManifold(curvature=1.0, dim=3)
     
     # x = (x_0, x_1, x_2, x_3)
@@ -55,7 +55,7 @@ def test_minkowski_dot():
 
 
 def test_lorentzian_distance():
-    """Test de distancia lorentziana"""
+    """Test Lorentzian distance"""
     manifold = LorentzManifold(curvature=1.0, dim=3)
     
     # Dos puntos cercanos en Lorentz
@@ -71,7 +71,7 @@ def test_lorentzian_distance():
 
 
 def test_lorentz_projection():
-    """Test de proyección a Lorentz"""
+    """Test Lorentz projection"""
     proj = LorentzProjection(euclidean_dim=64, lorentz_dim=64, curvature=1.0)
     
     batch_size = 4
@@ -80,22 +80,22 @@ def test_lorentz_projection():
     x_lorentz = proj(x)
     
     # Verificar dimensiones
-    assert x_lorentz.shape == (batch_size, 65)  # +1 por dimensión temporal
+    assert x_lorentz.shape == (batch_size, 65)  # +1 for time dimension
     
-    # Verificar que está en la variedad
+    # Verify it is on the manifold
     manifold = LorentzManifold(curvature=1.0, dim=64)
     norm = manifold.minkowski_norm(x_lorentz)
     
-    # Debería ser cercano a -1/κ
+    # Should be close to -1/κ
     assert abs(norm.mean().item() + 1.0) < 0.1
 
 
 def test_lorentz_linear():
-    """Test de capa lineal de Lorentz"""
+    """Test Lorentz linear layer"""
     layer = LorentzLinear(in_features=64, out_features=100, curvature=1.0)
     
     batch_size, seq_len = 2, 10
-    x = torch.randn(batch_size, seq_len, 65)  # 64 + 1 dimensión temporal
+    x = torch.randn(batch_size, seq_len, 65)  # 64 + 1 time dimension
     
     output = layer(x)
     
@@ -107,19 +107,19 @@ def test_lorentz_linear():
 
 
 def test_poincare_projection():
-    """Test de proyección Poincaré"""
+    """Test Poincare projection"""
     proj = PoincareProjection(dim=64, curvature=1.0)
     
     # Punto en Lorentz
     x_lorentz = torch.tensor([[2.0, 0.5, 0.3, 0.4]])
     
-    # Proyectar a Poincaré
+    # Project to Poincare
     x_poincare = proj.lorentz_to_poincare(x_lorentz)
     
     # La norma debe ser < 1 (dentro del disco)
     assert torch.norm(x_poincare).item() < 1.0
     
-    # Proyección inversa
+    # Projection inversa
     x_back = proj.poincare_to_lorentz(x_poincare)
     
     # Verificar consistencia
@@ -127,7 +127,7 @@ def test_poincare_projection():
 
 
 def test_lorentz_attention():
-    """Test de atención en Lorentz"""
+    """Test Lorentz attention"""
     attn = LorentzAttention(dim=64, num_heads=4, curvature=1.0)
     
     batch_size, seq_len = 2, 10
@@ -143,7 +143,7 @@ def test_lorentz_attention():
 
 
 if __name__ == '__main__':
-    print("Ejecutando tests de Lorentz...")
+    print("Running Lorentz tests...")
     
     test_lorentz_manifold()
     print("✓ LorentzManifold")
@@ -166,4 +166,4 @@ if __name__ == '__main__':
     test_lorentz_attention()
     print("✓ LorentzAttention")
     
-    print("\n✓ Todos los tests de Lorentz pasaron!")
+    print("\n✓ All Lorentz tests passed!")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests unitarios para VJEPA
+Unit tests for VJEPA (Vicinal Joint-Embedding Predictive Architecture)
 """
 
 import sys
@@ -15,10 +15,11 @@ from aegis.learning.vjepa import (
     EBM_energy, MaskingStrategy
 )
 from aegis.core.mamba3_mimo import Mamba3MIMO, SSMConfig
+from aegis.engine.bgce_engine import BGCEngine, BGCEConfig
 
 
 def test_vjepa_config():
-    """Test de configuración VJEPA"""
+    """VJEPAConfig creates with correct defaults"""
     config = VJEPAConfig(d_model=768, d_pred=384, mask_ratio=0.75)
     assert config.d_model == 768
     assert config.d_pred == 384
@@ -27,7 +28,7 @@ def test_vjepa_config():
 
 
 def test_target_encoder():
-    """Test de codificador objetivo"""
+    """TargetEncoder holds a frozen EMA copy of the encoder"""
     ssm_config = SSMConfig(d_model=128, d_state=16, n_layers=2)
     encoder = Mamba3MIMO(ssm_config)
     
@@ -40,34 +41,34 @@ def test_target_encoder():
     with torch.no_grad():
         output = target_enc(input_ids)
     
-    # Verificar dimensiones
+    # Verify dimensions
     assert output.shape == (batch_size, seq_len, ssm_config.d_model)
 
 
 def test_target_encoder_update():
-    """Test de actualización EMA del encoder objetivo"""
+    """EMA update modifies target encoder weights"""
     ssm_config = SSMConfig(d_model=64, d_state=16, n_layers=1)
     online_encoder = Mamba3MIMO(ssm_config)
     
     target_enc = TargetEncoder(online_encoder, ema_decay=0.9)
     
-    # Guardar pesos iniciales
+    # Save initial weights
     initial_weight = list(target_enc.encoder.parameters())[0].data.clone()
     
-    # Modificar encoder online
+    # Modify online encoder
     for param in online_encoder.parameters():
         param.data += 0.1
     
-    # Actualizar encoder objetivo
+    # Update target encoder
     target_enc.update(online_encoder)
     
-    # Verificar que cambió
+    # Verify change
     new_weight = list(target_enc.encoder.parameters())[0].data
     assert not torch.allclose(initial_weight, new_weight)
 
 
 def test_predictor():
-    """Test de predictor"""
+    """Predictor produces correct output shapes"""
     config = VJEPAConfig(d_model=128, d_pred=64, predictor_depth=2)
     predictor = Predictor(config)
     
@@ -80,13 +81,13 @@ def test_predictor():
     
     z_pred, variance = predictor(context, mask_indices, return_variance=True)
     
-    # Verificar dimensiones
+    # Verify dimensions
     assert z_pred.shape == (batch_size, num_masks, config.d_model)
     assert variance.shape == (batch_size, num_masks, config.d_model)
 
 
 def test_ebm_energy():
-    """Test de EBM"""
+    """EBM energy function produces scalar per sample"""
     ebm = EBM_energy(dim=64, hidden_dim=128)
     
     batch_size = 4
@@ -95,15 +96,15 @@ def test_ebm_energy():
     
     energy = ebm(z_pred, z_target)
     
-    # Verificar dimensiones
+    # Verify dimensions
     assert energy.shape == (batch_size,)
     
-    # Verificar que no hay NaN
+    # Verify no NaN
     assert not torch.isnan(energy).any()
 
 
 def test_masking_strategies():
-    """Test de estrategias de enmascaramiento"""
+    """All masking strategies produce correct shapes"""
     seq_len = 20
     mask_ratio = 0.5
     
@@ -123,7 +124,7 @@ def test_masking_strategies():
 
 
 def test_vjepa_forward():
-    """Test de forward pass VJEPA"""
+    """VJEPA forward returns dict with expected keys"""
     ssm_config = SSMConfig(d_model=128, d_state=16, n_layers=2)
     encoder = Mamba3MIMO(ssm_config)
     
@@ -136,14 +137,14 @@ def test_vjepa_forward():
     # Forward
     outputs = vjepa(input_ids)
     
-    # Verificar que tiene las claves esperadas
+    # Verify expected keys
     assert 'z_pred' in outputs
     assert 'z_target' in outputs
     assert 'variance' in outputs
 
 
 def test_vjepa_loss():
-    """Test de pérdida VJEPA"""
+    """VJEPA compute_loss returns non-negative scalar"""
     ssm_config = SSMConfig(d_model=64, d_state=16, n_layers=1)
     encoder = Mamba3MIMO(ssm_config)
     
@@ -156,17 +157,17 @@ def test_vjepa_loss():
     # Forward
     outputs = vjepa(input_ids)
     
-    # Calcular pérdida
+    # Compute loss
     loss = vjepa.compute_loss(outputs)
     
-    # Verificar que es escalar
+    # Verify scalar output
     assert loss.dim() == 0
     assert loss.item() >= 0
     assert not torch.isnan(loss)
 
 
 def test_vjepa_train_step():
-    """Test de paso de entrenamiento VJEPA"""
+    """Single VJEPA train_step returns metrics dict"""
     ssm_config = SSMConfig(d_model=64, d_state=16, n_layers=1)
     encoder = Mamba3MIMO(ssm_config)
     
@@ -184,14 +185,34 @@ def test_vjepa_train_step():
     # Train step
     metrics = vjepa.train_step(input_ids, optimizer)
     
-    # Verificar métricas
+    # Verify metrics
     assert 'loss' in metrics
     assert 'ema_loss' in metrics
     assert metrics['loss'] >= 0
 
 
+def test_vjepa_with_bgce_backbone():
+    """VJEPA works when BGCEngine (dict-returning) is the backbone [CPU]"""
+    bgce_config = BGCEConfig(d_model=64, n_layers=1, vocab_size=5000,
+        ssm_config=SSMConfig(d_model=64, d_state=4, d_inner=128, dt_rank=2,
+                             use_diagonal_ssm=True, device='cpu'))
+    backbone = BGCEngine(bgce_config)
+    
+    vjepa_config = VJEPAConfig(d_model=64, d_pred=32, mask_ratio=0.5)
+    vjepa = VJEPA(backbone, vjepa_config)
+    
+    batch_size, seq_len = 2, 16
+    input_ids = torch.randint(0, 5000, (batch_size, seq_len))
+    
+    outputs = vjepa(input_ids)
+    assert 'z_pred' in outputs
+    assert 'z_target' in outputs
+    assert outputs['z_pred'].shape == (batch_size, seq_len // 2, 64)
+    assert outputs['z_target'].shape == (batch_size, seq_len // 2, 64)
+
+
 if __name__ == '__main__':
-    print("Ejecutando tests de VJEPA...")
+    print("Running VJEPA tests...")
     
     test_vjepa_config()
     print("✓ VJEPAConfig")
@@ -220,4 +241,7 @@ if __name__ == '__main__':
     test_vjepa_train_step()
     print("✓ VJEPA train_step")
     
-    print("\n✓ Todos los tests de VJEPA pasaron!")
+    test_vjepa_with_bgce_backbone()
+    print("✓ VJEPA + BGCEngine integration")
+    
+    print("\n✓ All VJEPA tests passed!")

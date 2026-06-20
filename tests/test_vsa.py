@@ -18,7 +18,7 @@ from aegis.cognition.abstract_cot import (
 
 
 def test_circular_convolution():
-    """Test de convolución circular"""
+    """Test circular convolution"""
     conv = CircularConvolution(dim=64)
     
     a = torch.randn(2, 64)
@@ -37,7 +37,7 @@ def test_circular_convolution():
 
 
 def test_circular_convolution_inverse():
-    """Test de desvinculación"""
+    """Test unbinding"""
     conv = CircularConvolution(dim=64)
     
     a = torch.randn(2, 64)
@@ -49,7 +49,7 @@ def test_circular_convolution_inverse():
     # Desvincular
     b_recovered = conv.inverse(bound, a)
     
-    # b_recovered debería ser cercano a b
+    # b_recovered should be close to b
     assert torch.allclose(b, b_recovered, atol=0.5)  # Tolerancia alta por ruido
 
 
@@ -102,12 +102,12 @@ def test_vsa_bundle():
     # Verificar que no hay NaN
     assert not torch.isnan(bundled).any()
     
-    # La norma debería estar normalizada
+    # The norm should be normalized
     assert torch.norm(bundled, dim=-1).mean().item() > 10
 
 
 def test_vsa_unbind():
-    """Test de desvinculación VSA"""
+    """Test VSA unbinding"""
     config = AbstractCoTConfig(binding_dim=128, use_vsa=True)
     vsa = VSAModule(config)
     
@@ -141,7 +141,7 @@ def test_abstract_tokenizer():
 
 
 def test_abstract_cot_config():
-    """Test de configuración Abstract-CoT"""
+    """Test Abstract-CoT configuration"""
     config = AbstractCoTConfig(
         num_abstract_tokens=256,
         d_model=768,
@@ -187,7 +187,7 @@ def test_abstract_cot_forward():
 
 
 def test_abstract_cot_efficiency():
-    """Test de cálculo de eficiencia"""
+    """Test efficiency calculation"""
     config = AbstractCoTConfig()
     cot = AbstractCoT(config)
     
@@ -199,12 +199,12 @@ def test_abstract_cot_efficiency():
     
     ratio = cot._compute_efficiency_ratio(verbal_tokens, abstract_tokens)
     
-    # La eficiencia debería ser 50/5 = 10
+    # Efficiency should be 50/5 = 10
     assert ratio == 10.0
 
 
 def test_abstract_cot_decode():
-    """Test de decodificación de tokens abstractos"""
+    """Test abstract token decoding"""
     config = AbstractCoTConfig(num_abstract_tokens=256)
     cot = AbstractCoT(config)
     

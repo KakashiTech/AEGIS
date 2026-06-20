@@ -1,4 +1,13 @@
-from .cuda_kernels import load_cuda_kernels, triton_ssm_scan
-from .harvester import DataHarvester, AegisFlow
+from .triton_ssm import is_triton_available, triton_ssm_scan
+from .reference_implementations import (
+    ssm_scan_reference, mimo_conv_reference,
+    LatentMASProCompression, CausalTimePriorTrainer,
+    compute_theoretical_latency, verify_all
+)
 
-__all__ = ["load_cuda_kernels", "triton_ssm_scan", "DataHarvester", "AegisFlow"]
+__all__ = [
+    "is_triton_available", "triton_ssm_scan",
+    "ssm_scan_reference", "mimo_conv_reference",
+    "LatentMASProCompression", "CausalTimePriorTrainer",
+    "compute_theoretical_latency", "verify_all",
+]
