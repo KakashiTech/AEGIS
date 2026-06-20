@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-cpu_showdown.py — Diagonal++ SSM vs Transformer en CPU pura.
+cpu_showdown.py — Diagonal++ SSM vs Transformer on CPU.
 
-Benchmarks Mamba3MIMO (con Diagonal++) contra TransformerLM
-con los mismos d_model, n_layers para L = 128..8192.
+Benchmarks Mamba3MIMO (with Diagonal++) against TransformerLM
+with same d_model, n_layers for L = 128..8192.
 
-Resultado: muestra en qué L cruza la línea donde BGCE vence a Transformer.
+Result: shows at which L BGCE beats Transformer.
 """
 import json
 import time
@@ -113,13 +113,13 @@ def main():
 
     # Summary
     print("\n" + "=" * 70)
-    print("CONCLUSIÓN:")
+    print("CONCLUSION:")
     for L_str, data in results["results"].items():
         L = int(L_str)
         if data["winner"] == "BGCE 🏆":
-            print(f"  L={L:>5}: BGCE GANA ({data['ratio']:.3f}x más rápido)")
+            print(f"  L={L:>5}: BGCE WINS ({data['ratio']:.3f}x faster)")
         else:
-            print(f"  L={L:>5}: Transformer gana (BGCE a {data['ratio']:.3f}x)")
+            print(f"  L={L:>5}: Transformer wins (BGCE at {data['ratio']:.3f}x)")
 
 
 if __name__ == "__main__":
