@@ -31,3 +31,26 @@ benchmarks/*.json
 # Temp
 /tmp/
 *.tmp
+
+# Audit docs (historical, kept locally only)
+reports/
+audits/
+ADVERSARIAL_AUDIT_REPORT.md
+AUDIT_REPORT.md
+PROJECT_SUMMARY.md
+FINAL_SUMMARY.md
+FINAL_RUNTIME_AUDIT.md
+PHASE_3_COMPLETE.md
+PHASE_4_COMPLETE.md
+REAL_CAPABILITIES.md
+REPRODUCIBILITY_GUIDE.md
+STATUS_REPORT.md
+CHECKLIST.md
+demo.py
+
+# Old examples (replaced)
+examples/train_bgce.py
+examples/train_bgce_e2e.py
+examples/inference_demo.py
+examples/vsa_demo.py
+requirements.lock

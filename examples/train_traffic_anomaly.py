@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-train_traffic_anomaly.py — Entrena AEGIS en tráfico de red simulado.
-
-Modelo: tráfico benigno (web browsing) vs patrones maliciosos (C2 beacon, port scan).
-Demostración de detección en datos que imitan tráfico real.
+train_traffic_anomaly.py — Train AEGIS on simulated network traffic.
+Model: benign traffic (web browsing) vs malicious patterns (C2 beacon, port scan).
 """
 import sys, json, math
 from pathlib import Path
@@ -21,54 +19,41 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 def gen_web_traffic(n, seq_len=64):
-    """Simula tráfico web browsing benigno."""
+    """Simulate benign web browsing traffic. Features: [iat, pkt_len, ttl, sin(flags), cos(flags)]"""
     data = []
     for _ in range(n):
-        # IAT: distribución multimodal (HTTP requests + thinking time)
-        iat = np.abs(np.random.exponential(0.03, seq_len))
-        iat += np.random.normal(0, 0.005, seq_len)
-        # Packet sizes: bimodal (small ACKs + large data)
+        iat = np.abs(np.random.exponential(0.05, seq_len)) * (1 + np.random.normal(0, 0.1, seq_len))
         pkt_size = np.where(np.random.rand(seq_len) < 0.7,
                             np.random.randint(40, 100, seq_len),
                             np.random.randint(500, 1500, seq_len))
-        # TTL: normal
         ttl = np.random.randint(48, 64, seq_len)
-        features = np.column_stack([iat, pkt_size, ttl,
-                                    np.random.rand(seq_len),
-                                    np.random.rand(seq_len)])
+        flags = np.random.choice([0, 1], seq_len, p=[0.8, 0.2])
+        features = np.column_stack([iat, pkt_size, ttl, np.sin(flags), np.cos(flags)])
         data.append(features)
     return np.array(data, dtype=np.float32)
 
 def gen_c2_beacon(n, seq_len=64):
-    """Simula C2 beacon (tráfico periódico malicioso)."""
+    """Simula C2 beacon. Features: [iat, pkt_len, ttl, sin(flags), cos(flags)]"""
     data = []
     for _ in range(n):
-        t = np.linspace(0, 8 * np.pi, seq_len)
-        # IAT periódico (beacon cada ~3 segundos)
-        iat = 0.05 + 0.01 * np.sin(t) + np.random.normal(0, 0.002, seq_len)
-        iat = np.clip(iat, 0.001, 1.0)
-        # Packet sizes constante (beacon típico)
+        t = np.linspace(0, 4 * np.pi, seq_len)
+        iat = np.clip(0.05 + 0.008 * np.sin(t) + np.random.normal(0, 0.003, seq_len), 0.001, 1.0)
         pkt_size = np.random.randint(100, 300, seq_len)
-        # TTL ligeramente anómalo
         ttl = np.random.randint(64, 128, seq_len)
-        features = np.column_stack([iat, pkt_size, ttl,
-                                    np.sin(t * 0.5),
-                                    np.cos(t * 0.5)])
+        flags = np.random.choice([2, 4, 16], seq_len, p=[0.6, 0.3, 0.1])
+        features = np.column_stack([iat, pkt_size, ttl, np.sin(flags), np.cos(flags)])
         data.append(features)
     return np.array(data, dtype=np.float32)
 
 def gen_port_scan(n, seq_len=64):
-    """Simula port scanning."""
+    """Simula port scan. Features: [iat, pkt_len, ttl, sin(flags), cos(flags)]"""
     data = []
     for _ in range(n):
-        iat = np.abs(np.random.exponential(0.001, seq_len))
-        iat = np.clip(iat, 0.0001, 1.0)
-        # SYN packets pequeños
+        iat = np.abs(np.random.exponential(0.005, seq_len))
         pkt_size = np.random.randint(40, 80, seq_len)
-        ttl = np.random.randint(30, 60, seq_len)
-        features = np.column_stack([iat, pkt_size, ttl,
-                                    np.random.rand(seq_len),
-                                    np.random.rand(seq_len)])
+        ttl = np.random.randint(32, 128, seq_len)
+        flags = np.random.choice([0, 2, 4], seq_len, p=[0.3, 0.5, 0.2])
+        features = np.column_stack([iat, pkt_size, ttl, np.sin(flags), np.cos(flags)])
         data.append(features)
     return np.array(data, dtype=np.float32)
 
@@ -153,7 +138,7 @@ with torch.no_grad():
 
 print()
 print("=" * 60)
-print("RESULTADOS: Traffic Anomaly Detection")
+print("TRAFFIC ANOMALY DETECTION RESULTS")
 print("=" * 60)
 print(f"ROC-AUC: {auc:.4f}")
 print(f"Optimal threshold: {opt_thresh:.4f}")
@@ -175,4 +160,4 @@ results = {
 with open(Path(__file__).parent.parent / "benchmarks" / "traffic_anomaly_results.json", "w") as f:
     json.dump(results, f, indent=2)
 print(f"\nSaved to benchmarks/traffic_anomaly_results.json")
-print(f"\n{'✅' if acc > 0.8 else '❌'} AEGIS detecta tráfico anómalo en datos simulados")
+print(f"\n{'✅' if acc > 0.8 else '❌'} AEGIS detects anomalous traffic on simulated data")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-train_shakespeare_tiny.py — Entrena BGCE en Shakespeare character-level LM.
-Demuestra que BGCE aprende lenguaje real en CPU en <5 minutos.
+train_shakespeare_tiny.py — Train BGCE on Shakespeare character-level LM.
+Demonstrates BGCE learns real language on CPU in <5 minutes.
 """
 import sys, time, math, json
 from pathlib import Path
@@ -89,7 +89,7 @@ batch_size = 8
 eval_interval = 50
 max_steps = 500
 
-# Modelo pequeño para estabilidad y velocidad en CPU
+# Small model for stability and speed on CPU
 d_model = 64
 
 config = BGCEConfig(
@@ -179,7 +179,7 @@ for step in range(max_steps):
 # ─── Results ────────────────────────────────────────────────────────────────
 print()
 print("=" * 60)
-print("RESULTADOS SHAKESPEARE TINY")
+print("SHAKESPEARE TINY RESULTS")
 print("=" * 60)
 initial_ppl = results['perplexity'][0] if results['perplexity'] else float('nan')
 final_ppl = results['perplexity'][-1] if len(results['perplexity']) > 1 else float('nan')
@@ -223,4 +223,4 @@ with open(results_path, "w") as f:
 print(f"Results saved to {results_path}")
 
 learned = best_val_loss < float('inf') and (results['perplexity'][-1] < results['perplexity'][0] if len(results['perplexity']) > 1 else False)
-print(f"\n{'✅' if learned else '❌'} BGCE {'aprende' if learned else 'NO aprende'} lenguaje real en CPU")
+print(f"\n{'✅' if learned else '❌'} BGCE {'learns' if learned else 'does NOT learn'} real language on CPU")

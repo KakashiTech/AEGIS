@@ -2,8 +2,8 @@
 """
 train_algebraic_reasoning.py — Entrena Abstract-CoT en razonamiento algebraico.
 
-Demuestra que BGCE puede aprender a razonar con paréntesis anidados
-y generalizar a profundidades no vistas durante entrenamiento.
+Demonstrate BGCE learns to reason with nested parentheses
+and generalize to unseen depths.
 """
 import sys, math, json, random
 from pathlib import Path
@@ -147,7 +147,7 @@ with torch.no_grad():
 
 print()
 print("=" * 60)
-print(f"RESULTADOS: Algebraic Reasoning")
+print("ALGEBRAIC REASONING RESULTS")
 print("=" * 60)
 print(f"Train loss (depths 1-3): {train_loss:.4f}")
 print(f"Test in-dist (depths 1-3): {test_in_loss:.4f}")
