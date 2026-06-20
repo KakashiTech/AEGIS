@@ -1,8 +1,7 @@
 """
-AEGIS Cyber: Especialización de Defensa Térmica
+AEGIS Cyber Defense
 TVD-HL-SSM (Total Variation Diminishing - Hyperbolic Liquid - State Space Model)
-Modela la "física del flujo" de red en lugar de leer bytes
-Objetivo: 99.50% Tasa de Verdaderos Positivos contra túneles criptográficos (VLESS Reality)
+Models network "flow physics" instead of reading raw bytes
 """
 
 import torch
@@ -15,15 +14,15 @@ import numpy as np
 
 @dataclass
 class AEGISCyberConfig:
-    """Configuración AEGIS Cyber"""
+    """AEGIS Cyber Configuration"""
     d_model: int = 768
     n_flow_layers: int = 8
-    detection_threshold: float = 0.5  # Se calibra con ROC durante entrenamiento
-    tvd_coefficient: float = 0.1  # Coeficiente de disipación TVD
-    hyperbolic_curvature: float = 1.0  # Curvatura espacio hiperbólico
-    liquid_time_constant: float = 0.5  # τ para neuronas líquidas
-    sequence_length: int = 256  # Ventana de análisis de flujo
-    n_classes: int = 2  # Benigno / Malicioso
+    detection_threshold: float = 0.5  # Calibrated via ROC during training
+    tvd_coefficient: float = 0.1  # TVD dissipation coefficient
+    hyperbolic_curvature: float = 1.0  # Hyperbolic space curvature
+    liquid_time_constant: float = 0.5  # τ for liquid neurons
+    sequence_length: int = 256  # Flow analysis window
+    n_classes: int = 2  # Benign / Malicious
     tunnel_types: List[str] = None
     
     def __post_init__(self):
@@ -33,54 +32,57 @@ class AEGISCyberConfig:
 
 class FlowPhysicsEncoder(nn.Module):
     """
-    Codificador de física del flujo de red
-    Convierte tráfico de red a representación de flujo continuo
+    Network flow physics encoder
+    Converts network traffic to continuous flow representation
     """
     
     def __init__(self, config: AEGISCyberConfig):
         super().__init__()
         self.config = config
         
-        # Se determina dinámicamente n_features del input en forward
-        self.feature_encoder_fc = None  # Se crea en el primer forward
+        # Dynamic feature encoder registered as ModuleDict for DataParallel compat
+        self.feature_encoders = nn.ModuleDict()
         
-        # Positional encoding temporal para secuencias de flujo
+        # Temporal positional encoding for flow sequences
         self.temporal_encoding = nn.Parameter(
             torch.randn(1, config.sequence_length, config.d_model) * 0.02
         )
         
-        # Proyección a espacio hiperbólico
+        # Projection to hyperbolic space
         self.to_hyperbolic = nn.Linear(config.d_model, config.d_model + 1)
     
     def encode_flow(self, flow_data: torch.Tensor) -> torch.Tensor:
         """
-        Codificar datos de flujo de red
+        Encode network flow data
         
         Args:
-            flow_data: (B, L, n_features) - características de paquetes
+            flow_data: (B, L, n_features) - packet features
         
         Returns:
-            encoded: (B, L, d_model+1) - representación en espacio hiperbólico
+            encoded: (B, L, d_model+1) - hyperbolic space representation
         """
         batch_size, seq_len, n_features = flow_data.shape
         
-        # Crear feature_encoder dinámicamente si es primera vez o cambia n_features
-        if self.feature_encoder_fc is None or self.feature_encoder_fc[0].in_features != n_features:
-            self.feature_encoder_fc = nn.Sequential(
+        # Create feature_encoder dynamically (registered in ModuleDict)
+        key = f"n{n_features}"
+        if key not in self.feature_encoders:
+            encoder = nn.Sequential(
                 nn.Linear(n_features, self.config.d_model // 2),
                 nn.LayerNorm(self.config.d_model // 2),
                 nn.GELU(),
                 nn.Linear(self.config.d_model // 2, self.config.d_model)
             ).to(flow_data.device, flow_data.dtype)
+            self.feature_encoders[key] = encoder
+        feature_encoder_fc = self.feature_encoders[key]
         
-        # Codificar características
-        encoded = self.feature_encoder_fc(flow_data)
+        # Encode features
+        encoded = feature_encoder_fc(flow_data)
         
-        # Añadir encoding temporal
+        # Add temporal encoding
         if seq_len <= self.config.sequence_length:
             encoded = encoded + self.temporal_encoding[:, :seq_len, :]
         
-        # Proyectar a espacio hiperbólico
+        # Project to hyperbolic space
         hyperbolic = self.to_hyperbolic(encoded)
         
         return hyperbolic
@@ -88,8 +90,8 @@ class FlowPhysicsEncoder(nn.Module):
 
 class TVDHyperbolicLiquidSSM(nn.Module):
     """
-    TVD-HL-SSM: Modelo de espacio de estado líquido hiperbólico
-    con disipación de variación total
+    TVD-HL-SSM: Hyperbolic Liquid State Space Model
+    with Total Variation Diminishing dissipation
     """
     
     def __init__(self, config: AEGISCyberConfig):
@@ -97,47 +99,48 @@ class TVDHyperbolicLiquidSSM(nn.Module):
         self.config = config
         self.d_model = config.d_model
         
-        # Parámetros de flujo hiperbólico (d_model+1 para espacio hiperbólico)
+        # Hyperbolic flow parameters (d_model+1 for hyperbolic space)
         self.flow_velocity = nn.Parameter(torch.randn(config.d_model + 1) * 0.1)
         self.flow_viscosity = nn.Parameter(torch.tensor(0.1))
+        self.diffusivity = nn.Parameter(torch.tensor(0.01))
         
-        # Matriz de disipación TVD (opera en espacio hiperbólico: d_model+1)
+        # TVD dissipation matrix (operates in hyperbolic space: d_model+1)
         self.tvd_dissipation = nn.Sequential(
             nn.Linear(config.d_model + 1, config.d_model + 1),
             nn.Sigmoid()
         )
         
-        # Neuronas líquidas (CfC - Continuous-time Cellular Automata)
-        # Operan en espacio hiperbólico (d_model+1)
+        # Liquid neurons (CfC - Continuous-time Cellular Automata)
+        # Operate in hyperbolic space (d_model+1)
         self.liquid_neurons = nn.ModuleList([
             LiquidNeuron(config.d_model + 1, config.liquid_time_constant)
             for _ in range(config.n_flow_layers)
         ])
         
-        # Métrica de Minkowski para espacio hiperbólico
+        # Minkowski metric for hyperbolic space
         self.register_buffer('minkowski_metric', 
                            torch.diag(torch.tensor([-1.0] + [1.0] * config.d_model)))
     
     def minkowski_product(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """Producto interno de Minkowski"""
+        """Minkowski inner product"""
         # x, y: (..., d_model+1)
         time_component = -x[..., 0] * y[..., 0]
         space_component = (x[..., 1:] * y[..., 1:]).sum(dim=-1)
         return time_component + space_component
     
     def hyperbolic_distance(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """Distancia en espacio hiperbólico"""
+        """Distance in hyperbolic space"""
         dot = -self.minkowski_product(x, y)
         dot = torch.clamp(dot, min=1.0 + 1e-8)
         return torch.acosh(dot)
     
     def forward(self, flow_repr: torch.Tensor, dt: float = 0.1) -> torch.Tensor:
         """
-        Procesar flujo con TVD-HL-SSM
+        Process flow with TVD-HL-SSM
         
         Args:
-            flow_repr: (B, L, d_model+1) en espacio hiperbólico
-            dt: Paso de tiempo
+            flow_repr: (B, L, d_model+1) in hyperbolic space
+            dt: Time step
         
         Returns:
             processed: (B, L, d_model+1)
@@ -145,34 +148,40 @@ class TVDHyperbolicLiquidSSM(nn.Module):
         batch_size, seq_len, _ = flow_repr.shape
         x = flow_repr
         
-        # Capas de flujo líquido
+        # Liquid flow layers
         for layer_idx, liquid_layer in enumerate(self.liquid_neurons):
-            # Evolución temporal continua
+            # Continuous-time evolution
             new_states = []
             
             for t in range(seq_len):
                 x_t = x[:, t, :]
                 
-                # Ecuación de flujo hiperbólico con disipación TVD
-                # ∂u/∂t + v·∇u = ν∇²u - λ·TVD(u)
+                # Hyperbolic flow equation with TVD dissipation
+                # ∂u/∂t = -v·∇u + ν∇²u - λ·TVD(u)
                 
-                # Término de transporte
+                # Transport term: backward difference approx of v·∇u
                 if t > 0:
                     transport = self.flow_velocity * (x_t - x[:, t-1, :])
                 else:
                     transport = torch.zeros_like(x_t)
                 
-                # Término de disipación TVD
+                # Diffusion term: second-order central difference
+                if t > 0 and t < seq_len - 1:
+                    diffusion = x[:, t-1, :] - 2 * x_t + x[:, t+1, :]
+                else:
+                    diffusion = torch.zeros_like(x_t)
+                
+                # TVD dissipation term (negative sign per PDE)
                 tvd_term = self.flow_viscosity * self.tvd_dissipation(x_t)
                 
-                # Actualización líquida
-                dx_dt = -transport + tvd_term
+                # PDE-correct update: ∂u/∂t = -transport + ν·diffusion - λ·TVD
+                dx_dt = -transport + self.diffusivity * diffusion - tvd_term
                 x_new = x_t + dt * dx_dt
                 
-                # Aplicar neurona líquida
+                # Apply liquid neuron
                 x_new = liquid_layer(x_new.unsqueeze(1), dt).squeeze(1)
                 
-                # Proyectar de vuelta a hiperboloide
+                # Project back to hyperboloid
                 x_new = self._project_to_hyperboloid(x_new)
                 
                 new_states.append(x_new)
@@ -182,8 +191,8 @@ class TVDHyperbolicLiquidSSM(nn.Module):
         return x
     
     def _project_to_hyperboloid(self, x: torch.Tensor) -> torch.Tensor:
-        """Proyectar a hiperboloide unitario"""
-        # Asegurar que x_0 > ||x_space||
+        """Project to unit hyperboloid"""
+        # Ensure x_0 > ||x_space||
         x_0 = torch.sqrt(torch.norm(x[:, 1:], dim=-1, keepdim=True)**2 + 1.0)
         
         x_proj = torch.cat([x_0, x[:, 1:]], dim=-1)
@@ -192,8 +201,10 @@ class TVDHyperbolicLiquidSSM(nn.Module):
 
 class LiquidNeuron(nn.Module):
     """
-    Neurona Líquida con dinámica de tiempo continuo
+    Liquid Neuron with continuous-time RK4 dynamics
     CfC: Continuous-time Cellular Automata
+    dx/dt = -x/τ + tanh(W·x)
+    Local truncation error: O(dt⁵)
     """
     
     def __init__(self, dim: int, time_constant: float):
@@ -201,42 +212,43 @@ class LiquidNeuron(nn.Module):
         self.dim = dim
         self.tau = time_constant
         
-        # Parámetros de ODE
+        # ODE parameters
         self.W = nn.Linear(dim, dim)
         self.U = nn.Linear(dim, dim)
         
-        # No-linealidad
+        # Non-linearity
         self.activation = nn.Tanh()
     
     def forward(self, x: torch.Tensor, dt: float = 0.1) -> torch.Tensor:
         """
-        Solución de tiempo continuo
+        Continuous-time solution via RK4
         dx/dt = -x/τ + f(W·x + U·input)
         """
-        # Término de decaimiento
-        decay = -x / self.tau
+        def f(state):
+            decay = -state / self.tau
+            input_term = self.activation(self.W(state))
+            return decay + input_term
         
-        # Término de entrada
-        input_term = self.activation(self.W(x))
-        
-        # Actualización
-        dx = decay + input_term
-        x_new = x + dt * dx
+        k1 = f(x)
+        k2 = f(x + dt/2.0 * k1)
+        k3 = f(x + dt/2.0 * k2)
+        k4 = f(x + dt * k3)
+        x_new = x + dt/6.0 * (k1 + 2.0*k2 + 2.0*k3 + k4)
         
         return x_new
 
 
 class TunnelDetector(nn.Module):
     """
-    Detector especializado en túneles criptográficos
-    Entrenado para identificar VLESS Reality, Shadowsocks, Trojan, WireGuard
+    Cryptographic tunnel detector
+    Trained to identify VLESS Reality, Shadowsocks, Trojan, WireGuard
     """
     
     def __init__(self, config: AEGISCyberConfig):
         super().__init__()
         self.config = config
         
-        # Cabeza de clasificación de túneles
+        # Tunnel classification head
         self.tunnel_classifier = nn.Sequential(
             nn.Linear(config.d_model + 1, config.d_model),
             nn.LayerNorm(config.d_model),
@@ -248,7 +260,7 @@ class TunnelDetector(nn.Module):
             nn.Linear(config.d_model // 2, len(config.tunnel_types))
         )
         
-        # Detector binario (benigno/malicioso)
+        # Binary detector (benign/malicious)
         self.binary_detector = nn.Sequential(
             nn.Linear(config.d_model + 1, config.d_model // 2),
             nn.LayerNorm(config.d_model // 2),
@@ -257,8 +269,8 @@ class TunnelDetector(nn.Module):
             nn.Sigmoid()
         )
         
-        # Analizador de patrones de ofuscación
-        # FIX: num_heads=1 porque embed_dim=769 (d_model+1) no es divisible por 4
+        # Obfuscation pattern analyzer
+        # FIX: num_heads=1 because embed_dim=769 (d_model+1) not divisible by 4
         self.obfuscation_analyzer = nn.MultiheadAttention(
             embed_dim=config.d_model + 1,
             num_heads=1,
@@ -267,31 +279,31 @@ class TunnelDetector(nn.Module):
     
     def detect(self, flow_repr: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict]:
         """
-        Detectar túneles criptográficos
+        Detect cryptographic tunnels
         
         Returns:
-            is_tunnel: Probabilidad de ser túnel (B, 1)
-            tunnel_type: Clasificación por tipo (B, n_types)
-            metrics: Estadísticas de detección
+            is_tunnel: Tunnel probability (B, 1)
+            tunnel_type: Classification by type (B, n_types)
+            metrics: Detection statistics
         """
         batch_size = flow_repr.size(0)
         
-        # Analizar ofuscación
+        # Analyze obfuscation
         attended_repr, attention_weights = self.obfuscation_analyzer(
             flow_repr, flow_repr, flow_repr
         )
         
-        # Promediar sobre la secuencia
+        # Average over sequence
         pooled = attended_repr.mean(dim=1)  # (B, d_model+1)
         
-        # Detección binaria
+        # Binary detection
         is_tunnel = self.binary_detector(pooled)
         
-        # Clasificación de tipo
+        # Type classification
         tunnel_type_logits = self.tunnel_classifier(pooled)
         tunnel_type_probs = F.softmax(tunnel_type_logits, dim=-1)
         
-        # Métricas
+        # Metrics
         metrics = {
             'attention_entropy': -(attention_weights * torch.log(attention_weights + 1e-10)).sum(dim=-1).mean().item(),
             'max_attention': attention_weights.max().item(),
@@ -303,22 +315,22 @@ class TunnelDetector(nn.Module):
 
 class AEGISCyberDefense(nn.Module):
     """
-    Sistema completo de Defensa Térmica AEGIS
+    Complete AEGIS Thermal Defense System
     """
     
     def __init__(self, config: AEGISCyberConfig):
         super().__init__()
         self.config = config
         
-        # Componentes principales
+        # Main components
         self.flow_encoder = FlowPhysicsEncoder(config)
         self.tvd_hl_ssm = TVDHyperbolicLiquidSSM(config)
         self.tunnel_detector = TunnelDetector(config)
         
-        # Umbral de detección adaptativo
+        # Adaptive detection threshold
         self.detection_threshold = nn.Parameter(torch.tensor(config.detection_threshold))
         
-        # Estadísticas de rendimiento
+        # Performance statistics
         self.true_positives = 0
         self.false_positives = 0
         self.false_negatives = 0
@@ -327,26 +339,26 @@ class AEGISCyberDefense(nn.Module):
     
     def analyze_traffic(self, flow_data: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Dict]:
         """
-        Analizar tráfico de red
+        Analyze network traffic
         
         Args:
-            flow_data: (B, L, n_features) características de flujo
+            flow_data: (B, L, n_features) flow features
         
         Returns:
-            is_malicious: (B, 1) probabilidad de ser malicioso
-            tunnel_type: (B, n_types) clasificación de túnel
-            analysis: métricas detalladas
+            is_malicious: (B, 1) probability of being malicious
+            tunnel_type: (B, n_types) tunnel classification
+            analysis: detailed metrics
         """
-        # Codificar flujo
+        # Encode flow
         flow_repr = self.flow_encoder.encode_flow(flow_data)
         
-        # Procesar con TVD-HL-SSM
+        # Process with TVD-HL-SSM
         processed = self.tvd_hl_ssm(flow_repr)
         
-        # Detectar túneles
+        # Detect tunnels
         is_tunnel, tunnel_type, detection_metrics = self.tunnel_detector.detect(processed)
         
-        # Decisión final
+        # Final decision
         is_malicious = (is_tunnel > self.detection_threshold).float()
         
         analysis = {
@@ -361,7 +373,7 @@ class AEGISCyberDefense(nn.Module):
         return is_malicious, tunnel_type, analysis
     
     def update_metrics(self, predictions: torch.Tensor, ground_truth: torch.Tensor):
-        """Actualizar métricas de rendimiento"""
+        """Update performance metrics"""
         pred = predictions.bool()
         gt = ground_truth.bool()
         
@@ -371,7 +383,7 @@ class AEGISCyberDefense(nn.Module):
         self.true_negatives += (~pred & ~gt).sum().item()
     
     def get_detection_stats(self) -> Dict:
-        """Obtener estadísticas de detección"""
+        """Get detection statistics"""
         total = self.true_positives + self.false_positives + \
                 self.false_negatives + self.true_negatives
         
@@ -392,10 +404,10 @@ class AEGISCyberDefense(nn.Module):
         }
     
     def detect_vless_reality(self, flow_data: torch.Tensor) -> Tuple[bool, float]:
-        """Detección específica de VLESS Reality (desafío principal)"""
+        """Specific VLESS Reality detection (primary challenge)"""
         is_malicious, tunnel_type, _ = self.analyze_traffic(flow_data)
         
-        # VLESS Reality suele ser el índice 0 en tunnel_types
+        # VLESS Reality is usually index 0 in tunnel_types
         vless_prob = tunnel_type[0, 0].item()
         
         return is_malicious[0, 0].item() > 0.5, vless_prob

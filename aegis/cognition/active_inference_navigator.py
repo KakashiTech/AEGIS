@@ -1,7 +1,7 @@
 """
-Inferencia Activa Amortizada para Descubrimiento Científico
-Sistema que genera hipótesis y realiza "experimentos mentales"
-Navegador de Espacio de Hipótesis para minimizar sorpresa epistémica
+Amortized Active Inference for Scientific Discovery
+System that generates hypotheses and runs "mental experiments"
+Hypothesis Space Navigator to minimize epistemic surprise
 """
 
 import torch
@@ -15,40 +15,40 @@ import random
 
 @dataclass
 class ActiveInferenceConfig:
-    """Configuración Inferencia Activa"""
+    """Active Inference Configuration"""
     d_model: int = 768
-    n_hypothesis_space: int = 1000  # Tamaño del espacio de hipótesis
+    n_hypothesis_space: int = 1000  # Hypothesis space size
     epistemic_uncertainty_threshold: float = 0.3
     
-    # Generación de hipótesis
+    # Hypothesis generation
     n_candidate_hypotheses: int = 10
     hypothesis_dim: int = 256
     
-    # Experimentos mentales
+    # Mental experiments
     n_mental_rollouts: int = 20
     rollout_horizon: int = 10
     
-    # Amortización
+    # Amortization
     amortization_hidden_dim: int = 512
     surprise_tolerance: float = 0.1
 
 
 class HypothesisSpace(nn.Module):
     """
-    Espacio de Hipótesis latente
-    Cada hipótesis es un punto en el espacio latente que representa una teoría
+    Latent Hypothesis Space
+    Each hypothesis is a point in latent space representing a theory
     """
     
     def __init__(self, config: ActiveInferenceConfig):
         super().__init__()
         self.config = config
         
-        # Embeddings de hipótesis
+        # Hypothesis embeddings
         self.hypothesis_embeddings = nn.Parameter(
             torch.randn(config.n_hypothesis_space, config.hypothesis_dim)
         )
         
-        # Prior de hipótesis (qué tan probable es cada una a priori)
+        # Hypothesis prior (how likely each is a priori)
         self.hypothesis_priors = nn.Parameter(
             torch.ones(config.n_hypothesis_space) / config.n_hypothesis_space
         )
@@ -60,57 +60,57 @@ class HypothesisSpace(nn.Module):
             nn.GELU()
         )
         
-        # Métrica de distancia en espacio de hipótesis
+        # Distance metric in hypothesis space
         self.distance_metric = nn.Parameter(torch.eye(config.hypothesis_dim))
     
     def encode_hypothesis(self, hypothesis_id: int) -> torch.Tensor:
-        """Obtener embedding de hipótesis"""
+        """Get hypothesis embedding"""
         h_emb = self.hypothesis_embeddings[hypothesis_id]
         return self.to_model_space(h_emb)
     
     def compute_epistemic_distance(self, h1: int, h2: int) -> float:
-        """Distancia epistémica entre dos hipótesis"""
+        """Epistemic distance between two hypotheses"""
         diff = self.hypothesis_embeddings[h1] - self.hypothesis_embeddings[h2]
         distance = torch.sqrt(diff @ self.distance_metric @ diff)
         return distance.item()
     
     def sample_hypothesis(self, temperature: float = 1.0) -> int:
-        """Muestrear hipótesis según priores"""
+        """Sample hypotheses from prior"""
         probs = F.softmax(self.hypothesis_priors / temperature, dim=0)
         return torch.multinomial(probs, 1).item()
     
     def get_high_uncertainty_regions(self, n_regions: int = 5) -> List[int]:
-        """Identificar regiones de alta incertidumbre epistémica"""
-        # Calcular entropía de cada hipótesis con respecto a vecinos
+        """Identify regions of high epistemic uncertainty"""
+        # Calculate entropy of each hypothesis relative to neighbors
         uncertainties = []
         
         for i in range(self.config.n_hypothesis_space):
-            # Distancias a todas las demás
+            # Distances to all others
             distances = []
             for j in range(self.config.n_hypothesis_space):
                 if i != j:
                     dist = self.compute_epistemic_distance(i, j)
                     distances.append(dist)
             
-            # Varianza de distancias como medida de incertidumbre local
+            # Variance of distances as local uncertainty measure
             uncertainty = torch.tensor(distances).std().item()
             uncertainties.append((i, uncertainty))
         
-        # Ordenar por incertidumbre y retornar top-n
+        # Sort by uncertainty and return top-n
         uncertainties.sort(key=lambda x: x[1], reverse=True)
         return [idx for idx, _ in uncertainties[:n_regions]]
 
 
 class MentalExperimentSimulator(nn.Module):
     """
-    Simulador de "Experimentos Mentales"
-    Predice resultados de experimentos virtuales sin ejecutarlos físicamente
+    "Mental Experiment" Simulator
+    Predicts virtual experiment outcomes without physical execution
     """
     
     def __init__(self, config: ActiveInferenceConfig, world_model: nn.Module):
         super().__init__()
         self.config = config
-        self.world_model = world_model  # Modelo del mundo (H-JEPA o similar)
+        self.world_model = world_model  # World model (H-JEPA or similar)
         
         # Generador de resultados experimentales
         self.outcome_predictor = nn.Sequential(
@@ -120,7 +120,7 @@ class MentalExperimentSimulator(nn.Module):
             nn.LayerNorm(config.d_model)
         )
         
-        # Estimador de varianza (incertidumbre en predicción)
+        # Variance estimator (prediction uncertainty)
         self.variance_estimator = nn.Sequential(
             nn.Linear(config.d_model, config.d_model // 2),
             nn.GELU(),
@@ -133,25 +133,25 @@ class MentalExperimentSimulator(nn.Module):
                           hypothesis_embedding: torch.Tensor,
                           intervention: Optional[torch.Tensor] = None) -> Dict:
         """
-        Simular un experimento mental
+        Simulate a mental experiment
         
         Args:
-            current_state: Estado actual del sistema
-            hypothesis_embedding: Hipótesis a testear
-            intervention: Intervención experimental (opcional)
+            current_state: Current system state
+            hypothesis_embedding: Hypothesis to test
+            intervention: Experimental intervention (optional)
         
         Returns:
-            dict con outcome predicho, incertidumbre, sorpresa esperada
+            dict with predicted outcome, uncertainty, expected surprise
         """
         batch_size = current_state.size(0)
         
-        # Combinar estado con hipótesis
+        # Combine state with hypothesis
         combined = torch.cat([current_state, hypothesis_embedding.expand(batch_size, -1)], dim=-1)
         
-        # Predecir outcome
+        # Predict outcome
         predicted_outcome = self.outcome_predictor(combined)
         
-        # Estimar incertidumbre
+        # Estimate uncertainty
         predicted_variance = self.variance_estimator(predicted_outcome)
         
         # Simular rollout futuro
@@ -166,7 +166,7 @@ class MentalExperimentSimulator(nn.Module):
                 future_outcomes.append(next_state)
                 state = next_state
         
-        # Calcular sorpresa esperada (divergencia de predicciones)
+        # Compute expected surprise (prediction divergence)
         if len(future_outcomes) > 1:
             future_stack = torch.stack(future_outcomes, dim=1)
             surprise = future_stack.std(dim=1).mean().item()
@@ -185,7 +185,7 @@ class MentalExperimentSimulator(nn.Module):
                       current_state: torch.Tensor,
                       hypotheses: List[int],
                       hypothesis_space: HypothesisSpace) -> List[Dict]:
-        """Simular múltiples hipótesis en paralelo"""
+        """Simulate multiple hypotheses in parallel"""
         results = []
         
         for h_id in hypotheses:
@@ -199,22 +199,22 @@ class MentalExperimentSimulator(nn.Module):
 
 class EpistemicSurpriseMinimizer(nn.Module):
     """
-    Minimizador de Sorpresa Epistémica
-    Dirige exploración hacia regiones que maximizan reducción de incertidumbre
+    Epistemic Surprise Minimizer
+    Guides exploration toward uncertainty-reducing regions
     """
     
     def __init__(self, config: ActiveInferenceConfig):
         super().__init__()
         self.config = config
         
-        # Red para predecir reducción de incertidumbre
+        # Network to predict uncertainty reduction
         self.uncertainty_reduction_pred = nn.Sequential(
             nn.Linear(config.d_model + config.hypothesis_dim, config.amortization_hidden_dim),
             nn.GELU(),
             nn.Linear(config.amortization_hidden_dim, 1)
         )
         
-        # Historial de sorpresas
+        # Surprise history
         self.surprise_history = []
         self.epistemic_uncertainty_history = []
     
@@ -222,13 +222,13 @@ class EpistemicSurpriseMinimizer(nn.Module):
                                          current_state: torch.Tensor,
                                          hypothesis_emb: torch.Tensor) -> float:
         """
-        Calcular ganancia de información esperada (reducción de incertidumbre)
+        Compute expected information gain (uncertainty reduction)
         IG = H(prior) - H(posterior esperado)
         """
-        # Simplificación: usar predicción de red
+        # Simplified: use network prediction
         combined = torch.cat([current_state, hypothesis_emb], dim=-1)
         
-        # Valor alto = mayor reducción esperada de incertidumbre
+        # High value = greater expected uncertainty reduction
         info_gain = torch.sigmoid(self.uncertainty_reduction_pred(combined))
         
         return info_gain.mean().item()
@@ -239,34 +239,34 @@ class EpistemicSurpriseMinimizer(nn.Module):
                               hypothesis_space: HypothesisSpace,
                               mental_simulator: MentalExperimentSimulator) -> int:
         """
-        Seleccionar siguiente experimento para maximizar aprendizaje
-        Usa amortización para decidir rápidamente
+        Select next experiment to maximize learning
+        Uses amortization for fast decisions
         """
         expected_gains = []
         
         for h_id in candidate_hypotheses:
             h_emb = hypothesis_space.encode_hypothesis(h_id)
             
-            # Ganancia de información esperada
+            # Expected information gain
             info_gain = self.compute_expected_information_gain(current_state, h_emb)
             
-            # Sorpresa esperada del experimento mental
+            # Expected surprise of mental experiment
             sim_result = mental_simulator.simulate_experiment(current_state, h_emb)
             surprise = sim_result['expected_surprise']
             
-            # Balancear ganancia de información vs sorpresa tolerable
+            # Balance information gain vs tolerable surprise
             score = info_gain - self.config.surprise_tolerance * surprise
             expected_gains.append((h_id, score))
         
-        # Seleccionar hipótesis con mayor score
+        # Select hypothesis with highest score
         expected_gains.sort(key=lambda x: x[1], reverse=True)
         return expected_gains[0][0]
     
     def update_uncertainty(self, actual_surprise: float):
-        """Actualizar historial de incertidumbre epistémica"""
+        """Update epistemic uncertainty history"""
         self.surprise_history.append(actual_surprise)
         
-        # Calcular incertidumbre epistémica actual (entropía de sorpresas recientes)
+        # Calculate current epistemic uncertainty (entropy of recent surprises)
         if len(self.surprise_history) >= 10:
             recent_surprises = torch.tensor(self.surprise_history[-10:])
             # Normalizar
@@ -275,7 +275,7 @@ class EpistemicSurpriseMinimizer(nn.Module):
             self.epistemic_uncertainty_history.append(epistemic_uncertainty.item())
     
     def should_continue_exploration(self) -> bool:
-        """Decidir si continuar exploración basado en umbral de incertidumbre"""
+        """Decide whether to continue exploration based on uncertainty threshold"""
         if not self.epistemic_uncertainty_history:
             return True
         
@@ -285,45 +285,45 @@ class EpistemicSurpriseMinimizer(nn.Module):
 
 class HypothesisNavigator(nn.Module):
     """
-    Navegador de Espacio de Hipótesis
-    Sistema completo que guía el descubrimiento científico
+    Hypothesis Space Navigator
+    Complete system guiding scientific discovery
     """
     
     def __init__(self, config: ActiveInferenceConfig, world_model: nn.Module):
         super().__init__()
         self.config = config
         
-        # Componentes
+        # Components
         self.hypothesis_space = HypothesisSpace(config)
         self.mental_simulator = MentalExperimentSimulator(config, world_model)
         self.surprise_minimizer = EpistemicSurpriseMinimizer(config)
         
-        # Generador de hipótesis candidatas
+        # Candidate hypothesis generator
         self.hypothesis_generator = nn.Sequential(
             nn.Linear(config.d_model, config.amortization_hidden_dim),
             nn.GELU(),
             nn.Linear(config.amortization_hidden_dim, config.n_candidate_hypotheses * config.hypothesis_dim)
         )
         
-        # Estadísticas
+        # Statistics
         self.experiments_conducted = 0
         self.hypotheses_tested = []
         self.discoveries = []
     
     def generate_candidate_hypotheses(self, current_state: torch.Tensor) -> List[int]:
         """
-        Generar hipótesis candidatas basadas en estado actual
+        Generate candidate hypotheses based on current state
         """
-        # Usar red para generar candidatas
+        # Use network to generate candidates
         candidates_logits = self.hypothesis_generator(current_state.mean(dim=1))
         candidates_logits = candidates_logits.view(-1, self.config.n_candidate_hypotheses, self.config.hypothesis_dim)
         
-        # Seleccionar hipótesis del espacio más cercanas a los candidatos generados
+        # Select hypotheses from space closest to generated candidates
         candidate_ids = []
         for i in range(self.config.n_candidate_hypotheses):
             candidate_emb = candidates_logits[0, i]
             
-            # Encontrar hipótesis más cercana en espacio
+            # Find closest hypothesis in space
             distances = torch.cdist(
                 candidate_emb.unsqueeze(0),
                 self.hypothesis_space.hypothesis_embeddings
@@ -337,10 +337,10 @@ class HypothesisNavigator(nn.Module):
     def scientific_discovery_loop(self, initial_state: torch.Tensor, 
                                  max_iterations: int = 100) -> Dict:
         """
-        Loop completo de descubrimiento científico
+        Full scientific discovery loop
         
-        1. Generar hipótesis candidatas
-        2. Seleccionar experimento óptimo
+        1. Generate candidate hypotheses
+        2. Select optimal experiment
         3. Simular mentalmente
         4. Actualizar conocimiento
         5. Repetir hasta convergencia
@@ -348,7 +348,7 @@ class HypothesisNavigator(nn.Module):
         current_state = initial_state
         iteration = 0
         
-        print("Iniciando loop de descubrimiento científico...")
+        print("Starting scientific discovery loop...")
         
         while iteration < max_iterations and self.surprise_minimizer.should_continue_exploration():
             # 1. Generar candidatas
@@ -363,8 +363,8 @@ class HypothesisNavigator(nn.Module):
             h_emb = self.hypothesis_space.encode_hypothesis(selected_hypothesis)
             sim_result = self.mental_simulator.simulate_experiment(current_state, h_emb)
             
-            # 4. Simular outcome real (en implementación real, esto sería un experimento físico)
-            # Aquí simulamos con ruido
+            # 4. Simulate real outcome (in real implementation, this would be a physical experiment)
+            # Here we simulate with noise
             actual_outcome = sim_result['predicted_outcome'] + torch.randn_like(sim_result['predicted_outcome']) * 0.1
             
             # 5. Calcular sorpresa real
@@ -383,7 +383,7 @@ class HypothesisNavigator(nn.Module):
                 'actual_error': prediction_error.item()
             })
             
-            # Verificar si es "descubrimiento" (sorpresa baja, predicción acertada)
+            # Check if "discovery" (low surprise, correct prediction)
             if prediction_error.item() < 0.05:
                 self.discoveries.append({
                     'iteration': iteration,
@@ -394,8 +394,8 @@ class HypothesisNavigator(nn.Module):
             iteration += 1
             
             if iteration % 10 == 0:
-                print(f"  Iteración {iteration}: {len(self.discoveries)} descubrimientos, "
-                      f"incertidumbre epistémica: {self.surprise_minimizer.epistemic_uncertainty_history[-1]:.4f}")
+                print(f"  Iteration {iteration}: {len(self.discoveries)} discoveries, "
+                      f"epistemic uncertainty: {self.surprise_minimizer.epistemic_uncertainty_history[-1]:.4f}")
         
         return {
             'iterations': iteration,
@@ -406,7 +406,7 @@ class HypothesisNavigator(nn.Module):
         }
     
     def get_discoveries_summary(self) -> Dict:
-        """Resumen de descubrimientos científicos"""
+        """Summary of scientific discoveries"""
         return {
             'total_discoveries': len(self.discoveries),
             'total_experiments': self.experiments_conducted,
@@ -418,8 +418,8 @@ class HypothesisNavigator(nn.Module):
 
 class AmortizedActiveInference(nn.Module):
     """
-    Sistema de Inferencia Activa Amortizada completo
-    Integra todos los componentes para descubrimiento científico eficiente
+    Complete Amortized Active Inference system
+    Integrates all components for efficient scientific discovery
     """
     
     def __init__(self, config: ActiveInferenceConfig, world_model: nn.Module):
@@ -427,7 +427,7 @@ class AmortizedActiveInference(nn.Module):
         self.config = config
         self.navigator = HypothesisNavigator(config, world_model)
         
-        # Amortización: red que aprende a predecir qué tan buena es una hipótesis
+        # Amortization: network that learns to predict hypothesis quality
         self.hypothesis_quality_predictor = nn.Sequential(
             nn.Linear(config.hypothesis_dim, config.amortization_hidden_dim),
             nn.GELU(),
@@ -438,8 +438,8 @@ class AmortizedActiveInference(nn.Module):
     
     def amortized_hypothesis_quality(self, hypothesis_id: int) -> float:
         """
-        Predicción rápida (amortizada) de calidad de hipótesis
-        Evita simular todo el experimento
+        Fast (amortized) prediction of hypothesis quality
+        Avoids simulating the entire experiment
         """
         h_emb = self.navigator.hypothesis_space.hypothesis_embeddings[hypothesis_id]
         quality = self.hypothesis_quality_predictor(h_emb)
@@ -447,18 +447,18 @@ class AmortizedActiveInference(nn.Module):
     
     def forward(self, initial_state: torch.Tensor, mode: str = 'discovery') -> Dict:
         """
-        Forward principal
+        Main forward
         
         Args:
-            initial_state: Estado inicial del sistema
-            mode: 'discovery' (exploración) o 'exploitation' (uso de conocimiento)
+            initial_state: Initial system state
+            mode: 'discovery' (exploration) or 'exploitation' (use of knowledge)
         """
         if mode == 'discovery':
-            # Modo descubrimiento: explorar espacio de hipótesis
+            # Discovery mode: explore hypothesis space
             return self.navigator.scientific_discovery_loop(initial_state)
         else:
-            # Modo explotación: usar conocimiento adquirido
-            # Seleccionar mejor hipótesis conocida
+            # Exploitation mode: use acquired knowledge
+            # Select best known hypothesis
             if self.navigator.discoveries:
                 best_discovery = max(self.navigator.discoveries, key=lambda x: x['confidence'])
                 return {
@@ -470,7 +470,7 @@ class AmortizedActiveInference(nn.Module):
                 return {'message': 'No discoveries yet, run discovery mode first'}
     
     def get_stats(self) -> Dict:
-        """Estadísticas del sistema"""
+        """System statistics"""
         return {
             **self.navigator.get_discoveries_summary(),
             'amortization_active': True,

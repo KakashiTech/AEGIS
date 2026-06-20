@@ -1,5 +1,5 @@
 """
-Motor de Continuo Bio-Geométrico (BGCE)
+Bio-Geometric Continuum Engine (BGCE)
 Pipeline E2E: input_ids → Embedding → Mamba3 → (VJEPA) → (Lorentz) → (Abstract-CoT) → LM Head
 """
 
@@ -21,7 +21,7 @@ from ..cognition.abstract_cot import AbstractCoT, AbstractCoTConfig, VSAModule
 
 @dataclass
 class BGCEConfig:
-    """Configuración completa del Motor BGCE"""
+    """Configuration completa del Motor BGCE"""
     
     # Arquitectura
     d_model: int = 256
@@ -40,7 +40,7 @@ class BGCEConfig:
         use_diagonal_ssm=False
     ))
     
-    # Geometría Lorentz
+    # Lorentz geometry
     use_lorentz: bool = False
     lorentz_curvature: float = 1.0
     
@@ -71,7 +71,7 @@ class BGCEConfig:
     gradient_accumulation_steps: int = 4
     max_grad_norm: float = 1.0
     
-    # Optimización
+    # Optimization
     mixed_precision: bool = False
     compile_model: bool = False
     
@@ -96,7 +96,7 @@ class LorentzHead(nn.Module):
         self.config = config
         self.manifold = LorentzManifold(config.lorentz_curvature, config.d_model)
         
-        # Proyección a Lorentz
+        # Lorentz projection
         self.to_lorentz = LorentzProjection(
             euclidean_dim=config.d_model,
             lorentz_dim=config.d_model,
@@ -128,8 +128,10 @@ class LorentzHead(nn.Module):
 
 class ContinualLiquidNeurons(nn.Module):
     """
-    Solución analítica de tiempo continuo (CfC - Continuous-time Cellular Automata)
-    Neuronas líquidas para procesamiento de flujos
+    Analytic continuous-time solution (CfC - Continuous-time Cellular Automata)
+    Liquid neurons for stream processing with RK4 integration.
+    dx/dt = -x/τ + tanh(W·x)
+    Local truncation error: O(dt⁵) vs Euler's O(dt²)
     """
     
     def __init__(self, dim: int, time_constant: float = 1.0):
@@ -137,36 +139,35 @@ class ContinualLiquidNeurons(nn.Module):
         self.dim = dim
         self.tau = time_constant
         
-        # Parámetros de ODE
+        # ODE parameters
         self.W = nn.Linear(dim, dim)
         self.U = nn.Linear(dim, dim)
         
-        # Función de activación continua
+        # Continuous activation function
         self.activation = nn.Tanh()
         
     def forward(self, x: torch.Tensor, dt: float = 0.1) -> torch.Tensor:
         """
-        Solución de tiempo continuo
-        dx/dt = -x/τ + f(W*x + U*input)
-        
-        Solución analítica con dt pequeño
+        Continuous-time solution via RK4 (4th order Runge-Kutta)
+        dx/dt = -x/τ + tanh(W·x)
         """
-        # Término de decaimiento
-        decay = -x / self.tau
+        def f(state):
+            decay = -state / self.tau
+            input_term = self.activation(self.W(state))
+            return decay + input_term
         
-        # Término de entrada
-        input_term = self.activation(self.W(x))
-        
-        # Actualización
-        dx = decay + input_term
-        x_new = x + dt * dx
+        k1 = f(x)
+        k2 = f(x + dt/2.0 * k1)
+        k3 = f(x + dt/2.0 * k2)
+        k4 = f(x + dt * k3)
+        x_new = x + dt/6.0 * (k1 + 2.0*k2 + 2.0*k3 + k4)
         
         return x_new
 
 
 class BGCEngine(nn.Module):
     """
-    Motor de Continuo Bio-Geométrico E2E.
+    End-to-end Bio-Geometric Continuum Engine.
     Pipeline: input_ids → Embedding → Mamba3 → (VJEPA) → (Lorentz) → (Abstract-CoT) → LM Head
     """
     
@@ -177,10 +178,10 @@ class BGCEngine(nn.Module):
         # Token embedding
         self.token_embedding = nn.Embedding(config.vocab_size, config.d_model)
         
-        # Núcleo Mamba-3 MIMO
+        # Mamba-3 MIMO core
         self.backbone = Mamba3MIMO(config.ssm_config)
         
-        # Proyección a Lorentz
+        # Lorentz projection
         if config.use_lorentz:
             self.lorentz_proj = LorentzProjection(
                 euclidean_dim=config.d_model,
@@ -191,21 +192,21 @@ class BGCEngine(nn.Module):
         else:
             self.lm_head = nn.Linear(config.d_model, config.vocab_size)
         
-        # Neuronas líquidas (procesamiento continuo)
+        # Liquid neurons (continuous processing)
         self.liquid_layer = ContinualLiquidNeurons(config.d_model)
         
-        # Módulo VJEPA para pretraining (solo si se usa)
+        # VJEPA module for pretraining (only if used)
         if config.use_vjepa:
             self.vjepa = VJEPA(self, config.vjepa_config)
         
-        # Módulo Abstract-CoT (solo si se usa)
+        # Abstract-CoT module (only if used)
         if config.use_abstract_cot:
             self.abstract_cot = AbstractCoT(config.abstract_cot_config)
         
-        # Inicialización
+        # Initialization
         self._init_weights()
         
-        # Estadísticas
+        # Statistics
         self.register_buffer('total_tokens_processed', torch.tensor(0.0))
         self.register_buffer('total_steps', torch.tensor(0))
     
@@ -228,7 +229,7 @@ class BGCEngine(nn.Module):
         
         Args:
             input_ids: (B, L) token IDs
-            hidden_states: (B, L, d_model) si ya está embeddeado (opcional)
+            hidden_states: (B, L, d_model) if already embedded (optional)
             use_reasoning: Usar Abstract-CoT
             return_hidden: Retornar estados ocultos
         Returns:
@@ -242,11 +243,11 @@ class BGCEngine(nn.Module):
         
         B, L, D = hidden.shape
         
-        # Núcleo Mamba-3
+        # Mamba-3 core
         backbone_out = self.backbone(hidden, return_hidden=True)
         hidden = backbone_out if isinstance(backbone_out, torch.Tensor) else backbone_out['hidden']
         
-        # Neuronas líquidas
+        # Liquid neurons
         hidden = self.liquid_layer(hidden)
         
         # Razonamiento abstracto (opcional)
@@ -257,7 +258,7 @@ class BGCEngine(nn.Module):
             reasoning_outputs['abstract_tokens'] = cot_out.get('abstract_tokens')
             reasoning_outputs['reasoning_states'] = cot_out.get('reasoning_states')
         
-        # Proyección final
+        # Final projection
         if self.config.use_lorentz:
             logits = self.lorentz_head(hidden)
         else:
@@ -284,14 +285,14 @@ class BGCEngine(nn.Module):
                  top_p: Optional[float] = None,
                  use_reasoning: bool = False) -> torch.Tensor:
         """
-        Generación autoregresiva con top-p sampling
+        Autoregressive generation with top-p sampling
         
         Args:
             input_ids: (B, L) prompt
-            max_new_tokens: Máximo de tokens a generar
-            temperature: Temperatura de sampling
+            max_new_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
             top_p: Top-p (nucleus) sampling
-            use_reasoning: Usar razonamiento abstracto
+            use_reasoning: Use abstract reasoning
         Returns:
             generated: (B, L + max_new_tokens)
         """
@@ -301,6 +302,7 @@ class BGCEngine(nn.Module):
             temperature = self.config.temperature
         if top_p is None:
             top_p = self.config.top_p
+        temperature = max(temperature, 1e-8)  # Guard against T=0 causing div by zero
         
         self.eval()
         generated = input_ids
@@ -344,8 +346,8 @@ class TrainingPipeline:
     """
     Pipeline de entrenamiento en 3 etapas:
     1. SFT sobre datos de razonamiento
-    2. Destilación latente (VJEPA)
-    3. RL con decodificación restringida
+    2. Latent distillation (VJEPA)
+    3. RL with constrained decoding
     """
     
     def __init__(self, model: BGCEngine, config: BGCEConfig):
@@ -353,7 +355,7 @@ class TrainingPipeline:
         self.config = config
         self.device = config.device
         
-        # Optimizador
+        # Optimizer
         self.optimizer = self._create_optimizer()
         
         # Scheduler
@@ -403,7 +405,7 @@ class TrainingPipeline:
                     outputs = self.model(input_ids, use_reasoning=True)
                     logits = outputs['logits']
                     
-                    # Pérdida de lenguaje
+                    # Loss de lenguaje
                     loss = F.cross_entropy(
                         logits.view(-1, logits.size(-1)),
                         labels.view(-1),
@@ -458,7 +460,7 @@ class TrainingPipeline:
     
     def stage2_latent_distillation(self, dataloader: DataLoader, num_steps: int = 20000):
         """
-        Etapa 2: Entrenamiento VJEPA - Destilación latente
+        Stage 2: VJEPA training - Latent distillation
         """
         self.model.train()
         losses = []
@@ -491,9 +493,9 @@ class TrainingPipeline:
     
     def stage3_rl_tuning(self, dataloader: DataLoader, num_steps: int = 5000):
         """
-        Etapa 3: RL con decodificación restringida
+        Etapa 3. RL with constrained decoding
         """
-        # Simplificación: fine-tuning con reward shaping
+        # Simplified: fine-tuning with reward shaping
         self.model.train()
         losses = []
         
@@ -516,10 +518,10 @@ class TrainingPipeline:
             # Reward: eficiencia de razonamiento
             outputs = self.model(generated, use_reasoning=True)
             
-            # Simular reward (en práctica, usar RL verdadero)
+            # Simulate reward (in practice, use real RL)
             logits = outputs['logits']
             
-            # Pérdida con reward weighting
+            # Loss con reward weighting
             loss = F.cross_entropy(
                 logits[:, :-1].reshape(-1, logits.size(-1)),
                 generated[:, 1:].reshape(-1)
@@ -558,16 +560,16 @@ class InferenceEngine:
         self.config = config
         self.device = config.device
         
-        # Estadísticas de latencia
+        # Statistics de latencia
         self.latency_history = []
     
     @torch.no_grad()
     def inference(self, prompt: str, tokenizer, max_tokens: int = 100) -> Tuple[str, float]:
         """
-        Inferencia con medición de latencia
+        Inference with latency measurement
         
         Returns:
-            response: Respuesta generada
+            response: Response generada
             latency_ms: Latencia promedio en ms
         """
         self.model.eval()

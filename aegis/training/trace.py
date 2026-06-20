@@ -1,6 +1,6 @@
 """
 TrainingTrace - Sistema de trazabilidad runtime obligatorio.
-Cada step debe producir evidencia real de ejecución.
+Every step must produce real execution evidence.
 """
 
 import json
@@ -75,7 +75,7 @@ class StepTrace:
 class RuntimeTraceLogger:
     """
     Logger obligatorio de trazas runtime.
-    Si un módulo no loguea aquí, se considera DEAD CODE.
+    If a module does not log here, it is considered DEAD CODE.
     """
 
     def __init__(
@@ -94,7 +94,7 @@ class RuntimeTraceLogger:
         self.dead_steps = 0
         self.traces: List[StepTrace] = []
 
-        # Snapshots de parámetros para calcular delta
+        # Parameter snapshots for delta computation
         self._param_snapshots: Dict[str, torch.Tensor] = {}
 
         # Escribir header
@@ -105,14 +105,14 @@ class RuntimeTraceLogger:
             f.write(json.dumps(obj, default=str) + "\n")
 
     def snapshot_params(self, model: nn.Module) -> None:
-        """Guardar estado de parámetros ANTES del step."""
+        """Save parameter state BEFORE step."""
         self._param_snapshots.clear()
         for name, param in model.named_parameters():
             if param.requires_grad:
                 self._param_snapshots[name] = param.detach().clone()
 
     def compute_param_delta(self, model: nn.Module) -> Dict[str, float]:
-        """Calcular delta de parámetros DESPUÉS del step."""
+        """Compute parameter delta AFTER step."""
         delta = {}
         for name, param in model.named_parameters():
             if param.requires_grad and name in self._param_snapshots:
@@ -121,7 +121,7 @@ class RuntimeTraceLogger:
         return delta
 
     def compute_grad_norm(self, model: nn.Module) -> tuple[float, Dict[str, float]]:
-        """Calcular norma global y por módulo de gradientes."""
+        """Compute global and per-module gradient norm."""
         global_norm = 0.0
         per_module: Dict[str, float] = {}
 
@@ -129,7 +129,7 @@ class RuntimeTraceLogger:
             if param.grad is not None:
                 g_norm = param.grad.norm().item()
                 global_norm += g_norm ** 2
-                # Agrupar por módulo (primer segmento del nombre)
+                # Group by module (first name segment)
                 module_name = name.split(".")[0]
                 per_module[module_name] = per_module.get(module_name, 0.0) + g_norm ** 2
 
@@ -186,7 +186,7 @@ class RuntimeTraceLogger:
             name.split(".")[0]: delta
             for name, delta in trace.param_delta_per_module.items()
         }
-        # Agrupar por módulo
+        # Group by module
         module_deltas: Dict[str, List[float]] = {}
         for name, delta in trace.param_delta_per_module.items():
             mod = name.split(".")[0]
@@ -228,7 +228,7 @@ class RuntimeTraceLogger:
         return trace
 
     def get_summary(self) -> Dict[str, Any]:
-        """Resumen del sesión de entrenamiento."""
+        """Training session summary."""
         if not self.traces:
             return {"status": "NO_TRACES", "learning_rate": 0.0}
 

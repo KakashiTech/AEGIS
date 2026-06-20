@@ -1,8 +1,8 @@
 """
-Variational JEPA (VJEPA) - Joint-Embedding Predictive Architecture
+Variational JEPA (VJEPA) — Joint-Embedding Predictive Architecture
 
-Sistema de aprendizaje predictivo que minimiza energía variacional
-entre representaciones predichas y reales sin reconstrucción de tokens.
+Predictive learning system that minimizes variational energy
+between predicted and actual representations without token reconstruction.
 """
 
 import torch
@@ -16,23 +16,30 @@ import copy
 
 @dataclass
 class VJEPAConfig:
-    """Configuración para VJEPA"""
+    """Configuration for VJEPA"""
     d_model: int = 768
     d_pred: int = 384
     predictor_depth: int = 12
     ema_decay: float = 0.9998
     mask_ratio: float = 0.75
-    mask_strategy: str = "block"  # block, random, causal
+    mask_strategy: str = "block"  # block, random, causal, causal_graph
     loss_type: str = "l1"  # l1, l2, cosine
     use_variance: bool = True
     context_length: int = 512
     target_length: int = 64
     batch_size: int = 64
+    input_dim: int = 768  # input dimension for continuous data (projected to d_model)
+    # Causal graph params
+    causal_graph: Optional[Dict] = None  # {effect_idx: [cause_indices]}
+    n_causal_features: int = 3  # number of causal features for graph masking
+    # Thermodynamic regularizer
+    thermo_beta: float = 0.01  # β·||h||² coefficient
+    track_efficiency: bool = True
 
 
 class EBM_energy(nn.Module):
     """
-    Energy-Based Model para calibrar trayectorias latentes
+    Energy-Based Model for calibrating latent trajectories
     """
     
     def __init__(self, dim: int, hidden_dim: int = 512):
@@ -47,8 +54,8 @@ class EBM_energy(nn.Module):
     
     def forward(self, z_pred: torch.Tensor, z_target: torch.Tensor) -> torch.Tensor:
         """
-        Calcula energía entre predicción y objetivo
-        Menor energía = mejor predicción
+        Compute energy between prediction and target.
+        Lower energy = better prediction.
         """
         z_concat = torch.cat([z_pred, z_target], dim=-1)
         energy = self.energy_net(z_concat)
@@ -59,22 +66,25 @@ class EBM_energy(nn.Module):
                          z_target: torch.Tensor,
                          negatives: torch.Tensor) -> torch.Tensor:
         """
-        Pérdida contrastiva para EBM
+        Contrastive loss for EBM
         """
-        # Energía positiva (predicción correcta)
-        pos_energy = self.forward(z_pred, z_target)
+        B = z_pred.size(0)
+        # Positive energy (correct prediction)
+        pos_energy = self.forward(z_pred, z_target)  # (B,)
         
-        # Energías negativas (predicciones incorrectas)
-        neg_energies = []
-        for neg in negatives:
-            neg_energy = self.forward(z_pred, neg)
-            neg_energies.append(neg_energy)
-        
-        neg_energies = torch.stack(neg_energies, dim=1)
+        # Negative energies (incorrect predictions)
+        # negatives: (B, N, D) — N negative samples per anchor
+        if negatives.dim() == 2:
+            negatives = negatives.unsqueeze(1)  # (B, D) -> (B, 1, D)
+        N = negatives.size(1)
+        z_pred_exp = z_pred.unsqueeze(1).expand(-1, N, -1)  # (B, N, D)
+        neg_energy = self.forward(z_pred_exp.reshape(-1, z_pred.size(-1)),
+                                  negatives.reshape(-1, negatives.size(-1)))
+        neg_energy = neg_energy.reshape(B, N)
         
         # InfoNCE-style loss
-        logits = torch.cat([pos_energy.unsqueeze(1), neg_energies], dim=1)
-        labels = torch.zeros(len(z_pred), dtype=torch.long, device=z_pred.device)
+        logits = torch.cat([pos_energy.unsqueeze(1), neg_energy], dim=1)
+        labels = torch.zeros(B, dtype=torch.long, device=z_pred.device)
         
         loss = F.cross_entropy(-logits, labels)
         return loss
@@ -82,8 +92,8 @@ class EBM_energy(nn.Module):
 
 class TargetEncoder(nn.Module):
     """
-    Codificador objetivo actualizado mediante EMA
-    Proporciona objetivos estables para el predictor
+    Target encoder updated via EMA
+    Provides stable targets for the predictor
     """
     
     def __init__(self, encoder: nn.Module, ema_decay: float = 0.9998):
@@ -91,13 +101,13 @@ class TargetEncoder(nn.Module):
         self.encoder = copy.deepcopy(encoder)
         self.ema_decay = ema_decay
         
-        # Congelar parámetros del encoder objetivo
+        # Freeze target encoder parameters
         for param in self.encoder.parameters():
             param.requires_grad = False
     
     @torch.no_grad()
     def update(self, online_encoder: nn.Module):
-        """Actualizar usando Promedio Móvil Exponencial"""
+        """Update using Exponential Moving Average"""
         for param_t, param_s in zip(self.encoder.parameters(), 
                                      online_encoder.parameters()):
             param_t.data.mul_(self.ema_decay).add_(
@@ -106,26 +116,29 @@ class TargetEncoder(nn.Module):
     
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.encoder(x, return_hidden=True)
+        out = self.encoder(x, return_hidden=True)
+        if isinstance(out, dict):
+            return out['hidden_states']
+        return out
 
 
 class Predictor(nn.Module):
     """
-    Predictor que predice representaciones enmascaradas
-    desde representaciones de contexto
+    Predictor that predicts masked representations
+    from context representations
     """
     
     def __init__(self, config: VJEPAConfig):
         super().__init__()
         self.config = config
         
-        # Embed de posición para bloques enmascarados
+        # Position embedding for masked blocks
         self.mask_token = nn.Parameter(torch.randn(1, 1, config.d_pred))
         self.pos_embed = nn.Parameter(
             torch.randn(1, config.target_length, config.d_pred) * 0.02
         )
         
-        # Proyección de contexto a dimensión de predictor
+        # Context projection to predictor dimension
         self.context_proj = nn.Linear(config.d_model, config.d_pred)
         
         # Transformer predictor
@@ -143,10 +156,10 @@ class Predictor(nn.Module):
             num_layers=config.predictor_depth
         )
         
-        # Proyección de salida
+        # Output projection
         self.output_proj = nn.Linear(config.d_pred, config.d_model)
         
-        # Predicción de varianza (para VJEPA variacional) - aplicada ANTES de output_proj
+        # Variance prediction (for variational VJEPA) - applied BEFORE output_proj
         if config.use_variance:
             self.variance_pred = nn.Linear(config.d_pred, config.d_model)
     
@@ -157,34 +170,39 @@ class Predictor(nn.Module):
         """
         Args:
             context: Representaciones de contexto (B, L_ctx, d_model)
-            mask_indices: Índices de bloques enmascarados (B, n_masks)
-            return_variance: Si retornar varianza predicha
+            mask_indices: Masked block indices (B, n_masks)
+            return_variance: Whether to return predicted variance
         Returns:
-            z_pred: Predicciones de representaciones (B, n_masks, d_model)
-            variance: Varianza predicha (opcional)
+            z_pred: Representation predictions (B, n_masks, d_model)
+            variance: Predicted variance (optional)
         """
         batch_size, n_masks = mask_indices.shape
         
-        # Proyectar contexto
+        if n_masks > self.config.target_length:
+            import warnings
+            warnings.warn(f"n_masks={n_masks} > target_length={self.config.target_length}. "
+                          f"Truncating to {self.config.target_length}.")
+        
+        # Project context
         context_proj = self.context_proj(context)  # (B, L_ctx, d_pred)
         
-        # Crear tokens de máscara con posición
+        # Create mask tokens with position
         mask_tokens = self.mask_token.expand(batch_size, n_masks, -1)
         mask_tokens = mask_tokens + self.pos_embed[:, :n_masks, :]
         
-        # Concatenar contexto y máscaras
+        # Concatenate context and masks
         x = torch.cat([context_proj, mask_tokens], dim=1)
         
-        # Aplicar predictor
+        # Apply predictor
         x = self.predictor_transformer(x)
         
-        # Extraer predicciones de máscaras
+        # Extract mask predictions
         z_pred = x[:, -n_masks:, :]  # (B, n_masks, d_pred)
         
         variance = None
         if return_variance and self.config.use_variance:
             variance = self.variance_pred(z_pred)
-            variance = F.softplus(variance)  # Asegurar positividad
+            variance = F.softplus(variance)  # Ensure positivity
         
         z_pred = self.output_proj(z_pred)  # (B, n_masks, d_model)
         
@@ -193,18 +211,18 @@ class Predictor(nn.Module):
 
 class MaskingStrategy:
     """
-    Estrategias de enmascaramiento para JEPA
+    Masking strategies for JEPA
     """
     
     @staticmethod
     def block_mask(seq_len: int, mask_ratio: float, block_size: int = 4) -> torch.Tensor:
         """
-        Enmascaramiento por bloques (eficiente para hardware)
+        Block masking (hardware-efficient)
         """
         num_blocks = seq_len // block_size
         num_masked = int(num_blocks * mask_ratio)
         
-        # Seleccionar bloques aleatorios
+        # Select random blocks
         mask = torch.zeros(seq_len, dtype=torch.bool)
         block_indices = torch.randperm(num_blocks)[:num_masked]
         
@@ -217,7 +235,7 @@ class MaskingStrategy:
     
     @staticmethod
     def random_mask(seq_len: int, mask_ratio: float) -> torch.Tensor:
-        """Enmascaramiento aleatorio"""
+        """Random masking"""
         num_masked = int(seq_len * mask_ratio)
         mask = torch.zeros(seq_len, dtype=torch.bool)
         indices = torch.randperm(seq_len)[:num_masked]
@@ -226,30 +244,85 @@ class MaskingStrategy:
     
     @staticmethod
     def causal_mask(seq_len: int, mask_ratio: float) -> torch.Tensor:
-        """Enmascaramiento causal (última parte de la secuencia)"""
+        """Causal masking (last part of the sequence)"""
         num_masked = int(seq_len * mask_ratio)
         mask = torch.zeros(seq_len, dtype=torch.bool)
         mask[-num_masked:] = True
+        return mask
+    
+    @staticmethod
+    def causal_graph_mask(seq_len: int, mask_ratio: float,
+                          causal_graph: dict, n_causal_features: int,
+                          batch_data: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Causal graph-based masking.
+        
+        - EFFECT features (those with causes): masked
+        - CAUSE features (those that cause something): visible
+        - INDEPENDENT: random masking
+        
+        Args:
+            causal_graph: {effect_idx: [cause_indices]}
+            n_causal_features: number of causal features
+            batch_data: tensor (B, L, D) optional for feature scaling
+        Returns:
+            mask: tensor (seq_len,) bool — True = masked
+        """
+        mask = torch.zeros(seq_len, dtype=torch.bool)
+        
+        # Determine which feature indices are effects vs causes
+        effect_indices = set(causal_graph.get('causes', {}).keys())
+        cause_indices = set()
+        for causes in causal_graph.get('causes', {}).values():
+            cause_indices.update(causes)
+        # Features not in either are "independent"
+        
+        # For causal VJEPA: mask effects + some independent
+        # Keep all causes visible
+        d_per_feature = seq_len // n_causal_features if n_causal_features > 0 else seq_len
+        
+        for feat_idx in range(n_causal_features):
+            start = feat_idx * d_per_feature
+            end = min((feat_idx + 1) * d_per_feature, seq_len)
+            feat_len = end - start
+            
+            if feat_idx in effect_indices:
+                # Mask this feature heavily
+                n = max(1, int(feat_len * mask_ratio))
+                indices = torch.randperm(feat_len)[:n] + start
+                mask[indices] = True
+            elif feat_idx in cause_indices:
+                # Keep visible (unmasked)
+                pass
+            else:
+                # Independent: partial mask
+                n = max(1, int(feat_len * mask_ratio * 0.5))
+                indices = torch.randperm(feat_len)[:n] + start
+                mask[indices] = True
+        
         return mask
 
 
 class VJEPA(nn.Module):
     """
-    Variational JEPA completo
+    Complete Variational JEPA
     
-    Minimiza energía variacional entre representaciones:
-    L = ||ẑ_masked - z_target||_1
+    Minimizes variational energy between representations:
+    L = ||z_pred - z_target||_1
     """
     
     def __init__(self, encoder: nn.Module, config: VJEPAConfig):
         super().__init__()
         self.config = config
         
-        # Codificador online (entrenable)
+        # Online encoder (trainable)
         self.online_encoder = encoder
         
-        # Codificador objetivo (EMA)
+        # Target encoder (EMA)
         self.target_encoder = TargetEncoder(encoder, config.ema_decay)
+        
+        # Project continuous input (B, L, input_dim) -> (B, L, d_model)
+        self.input_proj = nn.Linear(config.input_dim, config.d_model) if config.input_dim != config.d_model else nn.Identity()
         
         # Predictor
         self.predictor = Predictor(config)
@@ -257,32 +330,41 @@ class VJEPA(nn.Module):
         # Energy-Based Model
         self.ebm = EBM_energy(config.d_model)
         
-        # Estrategia de enmascaramiento
+        # Masking strategy
         self.masking_strategy = MaskingStrategy()
         
-        # Estadísticas
+        # EMA loss tracking
         self.register_buffer('ema_loss', torch.tensor(0.0))
         self.step_count = 0
     
-    def create_masks(self, batch_size: int, seq_len: int, device: str) -> Tuple[torch.Tensor, torch.Tensor]:
+    def create_masks(self, batch_size: int, seq_len: int, device: str,
+                     batch_data: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Crear máscaras para contexto y objetivo
+        Create context and target masks
         """
         context_masks = []
         target_masks = []
         
-        for _ in range(batch_size):
+        for b in range(batch_size):
             if self.config.mask_strategy == "block":
                 mask = self.masking_strategy.block_mask(seq_len, self.config.mask_ratio)
             elif self.config.mask_strategy == "random":
                 mask = self.masking_strategy.random_mask(seq_len, self.config.mask_ratio)
             elif self.config.mask_strategy == "causal":
                 mask = self.masking_strategy.causal_mask(seq_len, self.config.mask_ratio)
+            elif self.config.mask_strategy == "causal_graph":
+                batch_i = batch_data[b] if batch_data is not None else None
+                mask = self.masking_strategy.causal_graph_mask(
+                    seq_len, self.config.mask_ratio,
+                    self.config.causal_graph or {},
+                     self.config.n_causal_features,
+                     batch_i
+                )
             else:
                 mask = self.masking_strategy.block_mask(seq_len, self.config.mask_ratio)
             
-            context_mask = ~mask  # Contexto = no enmascarado
-            target_mask = mask    # Objetivo = enmascarado
+            context_mask = ~mask  # Context = unmasked
+            target_mask = mask    # Target = masked
             
             context_masks.append(context_mask)
             target_masks.append(target_mask)
@@ -291,54 +373,63 @@ class VJEPA(nn.Module):
     
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
-        Paso forward de VJEPA
+        VJEPA forward pass
         
         Args:
-            x: Entrada (B, L) o (B, L, d)
+            x: Input (B, L) or (B, L, d)
         Returns:
-            dict con pérdida y representaciones
+            dict with loss and representations
         """
         device = x.device
         
-        # Obtener representaciones
+        # Project continuous input if needed
+        if x.dim() == 3:
+            x = self.input_proj(x)
+        
+        # Get target encoder representations (frozen EMA)
         if x.dim() == 2:
-            # Si es input_ids, pasar por encoder
             with torch.no_grad():
                 z_full = self.target_encoder(x)  # (B, L, d_model)
         else:
-            z_full = x
+            with torch.no_grad():
+                z_full = self.target_encoder(x)
         
         batch_size, seq_len, _ = z_full.shape
         
-        # Crear máscaras
-        context_mask, target_mask = self.create_masks(batch_size, seq_len, device)
+        # Create masks (pass batch_data for causal_graph)
+        batch_data = x if x.dim() == 3 else None
+        context_mask, target_mask = self.create_masks(batch_size, seq_len, device, batch_data)
         
-        # Contexto (visible)
+        # Context (visible)
         context = []
         for i in range(batch_size):
             ctx = z_full[i][context_mask[i]]
             context.append(ctx)
         
-        # Padding para batch
+        # Batch padding
         max_ctx_len = max(len(c) for c in context)
         context_padded = torch.zeros(batch_size, max_ctx_len, self.config.d_model, device=device)
         for i, ctx in enumerate(context):
             context_padded[i, :len(ctx)] = ctx
         
-        # Índices de targets enmascarados
+        # Masked target indices
         target_indices = []
         for i in range(batch_size):
             indices = torch.where(target_mask[i])[0]
             target_indices.append(indices)
         
-        # Targets reales (del encoder objetivo)
+        # Ground truth targets (from target encoder)
         z_targets = []
         for i in range(batch_size):
             z_t = z_full[i][target_mask[i]]
             z_targets.append(z_t)
         
-        # Padding de targets
+        # Target padding
         max_tgt_len = min(max(len(t) for t in z_targets), self.config.target_length)
+        if max(len(t) for t in z_targets) > self.config.target_length:
+            import warnings
+            warnings.warn(f"Max target len ({max(len(t) for t in z_targets)}) > "
+                          f"target_length ({self.config.target_length}). Truncating.")
         target_indices_padded = torch.zeros(batch_size, max_tgt_len, dtype=torch.long, device=device)
         z_targets_padded = torch.zeros(batch_size, max_tgt_len, self.config.d_model, device=device)
         
@@ -347,7 +438,7 @@ class VJEPA(nn.Module):
             target_indices_padded[i, :n] = indices[:n]
             z_targets_padded[i, :n] = z_t[:n]
         
-        # Predicción
+        # Prediction
         z_pred, variance = self.predictor(
             context_padded, 
             target_indices_padded,
@@ -359,25 +450,25 @@ class VJEPA(nn.Module):
             'z_target': z_targets_padded,
             'variance': variance,
             'context_mask': context_mask,
-            'target_mask': target_mask
+            'target_mask': target_mask,
         }
     
     def compute_loss(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
-        Calcular pérdida de predicción latente
-        L = ||ẑ_masked - z_target||_1 (o L2, coseno)
+        Compute latent prediction loss
+        L = ||z_pred - z_target||_1 + β·||h||²
         """
         z_pred = outputs['z_pred']
         z_target = outputs['z_target']
         variance = outputs.get('variance')
         
-        # Máscara para elementos válidos
+        # Mask for valid elements
         mask = (z_target.abs().sum(dim=-1) > 0).float()
         
-        # Diferencia
+        # Difference
         diff = z_pred - z_target
         
-        # Pérdida según tipo
+        # Loss by type
         if self.config.loss_type == "l1":
             loss = torch.abs(diff)
         elif self.config.loss_type == "l2":
@@ -387,28 +478,35 @@ class VJEPA(nn.Module):
         else:
             loss = torch.abs(diff)
         
-        # Aplicar máscara y promediar
+        # Apply mask and average
         loss = (loss * mask.unsqueeze(-1)).sum() / (mask.sum() * z_pred.size(-1) + 1e-8)
         
-        # Término de varianza (para VJEPA variacional)
+        # Variance term (for variational VJEPA)
         if variance is not None:
-            # Negative log-likelihood con varianza
             var_loss = 0.5 * torch.log(variance + 1e-8) + 0.5 * (diff ** 2) / (variance + 1e-8)
             var_loss = (var_loss * mask.unsqueeze(-1)).sum() / (mask.sum() * z_pred.size(-1) + 1e-8)
             loss = loss + 0.1 * var_loss
         
-        # Actualizar EMA loss para monitoreo
+        # ─── Thermodynamic Regularizer β·||z_pred||² ─────────────────
+        # Penalizes prediction energy (latent representations).
+        # Lower energy → more stable and generalizable representations.
+        if self.config.thermo_beta > 0:
+            z_norm = z_pred.pow(2).mean()
+            thermo_loss = self.config.thermo_beta * z_norm
+            loss = loss + thermo_loss
+        
+        # Update EMA loss for monitoring
         self.ema_loss = 0.99 * self.ema_loss + 0.01 * loss.detach()
         
         return loss
     
     def update_target_encoder(self):
-        """Actualizar codificador objetivo con EMA"""
+        """Update target encoder with EMA"""
         self.target_encoder.update(self.online_encoder)
         self.step_count += 1
     
     def train_step(self, x: torch.Tensor, optimizer: torch.optim.Optimizer) -> Dict[str, float]:
-        """Un paso completo de entrenamiento"""
+        """One complete training step"""
         self.online_encoder.train()
         self.predictor.train()
         
@@ -425,10 +523,10 @@ class VJEPA(nn.Module):
         )
         optimizer.step()
         
-        # Actualizar encoder objetivo
+        # Update target encoder
         self.update_target_encoder()
         
         return {
             'loss': loss.item(),
-            'ema_loss': self.ema_loss.item()
+            'ema_loss': self.ema_loss.item(),
         }

@@ -1,8 +1,8 @@
 """
-LatentMAS: Colaboración Multi-Agente en Espacio Latente
-Los agentes BGCE transfieren memorias de trabajo como representaciones de última capa
-Reducción de 70.8% - 83.7% en uso de tokens de salida
-Mejora de 14.6% en precisión de razonamiento científico
+LatentMAS: Multi-Agent Collaboration in Latent Space
+BGCE agents transfer working memories as last-layer representations
+70.8% - 83.7% reduction in output token usage
+14.6% improvement in scientific reasoning accuracy
 """
 
 import torch
@@ -15,11 +15,11 @@ import copy
 
 @dataclass
 class LatentMASConfig:
-    """Configuración LatentMAS"""
+    """Configuration LatentMAS"""
     d_model: int = 768
     n_agents: int = 4
     communication_rounds: int = 3
-    token_reduction_target: float = 0.75  # 75% reducción = 70.8-83.7%
+    token_reduction_target: float = 0.75  # 75% reduction = 70.8-83.7%
     science_accuracy_improvement: float = 0.146  # 14.6%
     memory_pool_size: int = 1000
     consensus_threshold: float = 0.8
@@ -27,27 +27,27 @@ class LatentMASConfig:
 
 class AgentMemoryBank(nn.Module):
     """
-    Banco de memoria de trabajo para cada agente
-    Almacena representaciones latentes en lugar de texto
+    Working memory bank for each agent
+    Stores latent representations instead of text
     """
     
     def __init__(self, config: LatentMASConfig):
         super().__init__()
         self.config = config
         
-        # Memoria de trabajo latente
+        # Latent working memory
         self.working_memory = []
         self.memory_keys = []
         self.max_size = config.memory_pool_size
         
-        # Atención sobre memoria
+        # Memory attention
         self.memory_attention = nn.MultiheadAttention(
             embed_dim=config.d_model,
             num_heads=8,
             batch_first=True
         )
         
-        # Comprimidor de memoria
+        # Memory compressor
         self.memory_compressor = nn.Sequential(
             nn.Linear(config.d_model * 2, config.d_model),
             nn.LayerNorm(config.d_model),
@@ -55,9 +55,9 @@ class AgentMemoryBank(nn.Module):
         )
     
     def store(self, representation: torch.Tensor, key: str):
-        """Almacenar representación en memoria"""
+        """Store representation in memory"""
         if len(self.working_memory) >= self.max_size:
-            # Eliminar memoria más antigua
+            # Remove oldest memory
             self.working_memory.pop(0)
             self.memory_keys.pop(0)
         
@@ -65,11 +65,11 @@ class AgentMemoryBank(nn.Module):
         self.memory_keys.append(key)
     
     def retrieve(self, query: torch.Tensor, top_k: int = 3) -> List[torch.Tensor]:
-        """Recuperar memorias relevantes"""
+        """Retrieve relevant memories"""
         if not self.working_memory:
             return []
         
-        # Calcular similitud
+        # Compute similarity
         memories = torch.stack(self.working_memory)
         similarities = F.cosine_similarity(
             query.unsqueeze(1),
@@ -77,23 +77,23 @@ class AgentMemoryBank(nn.Module):
             dim=-1
         )
         
-        # Seleccionar top-k
+        # Select top-k
         top_indices = similarities.topk(min(top_k, len(self.working_memory)), dim=-1).indices[0]
         
         return [self.working_memory[i] for i in top_indices]
     
     def consolidate(self, new_memory: torch.Tensor) -> torch.Tensor:
-        """Consolidar nueva memoria con existente"""
+        """Consolidate new memory with existing"""
         if not self.working_memory:
             return new_memory
         
-        # Recuperar memorias relevantes
+        # Retrieve relevant memories
         relevant = self.retrieve(new_memory, top_k=3)
         
         if not relevant:
             return new_memory
         
-        # Combinar
+        # Combine
         relevant_stack = torch.stack(relevant).mean(dim=0)
         combined = torch.cat([new_memory, relevant_stack], dim=-1)
         
@@ -102,30 +102,30 @@ class AgentMemoryBank(nn.Module):
 
 class LatentCommunicationChannel(nn.Module):
     """
-    Canal de comunicación directa en espacio latente
-    Sin tokenización/descodificación
+    Direct communication channel in latent space
+    No tokenization/decoding
     """
     
     def __init__(self, config: LatentMASConfig):
         super().__init__()
         self.config = config
         
-        # Codificador de mensajes latentes
+        # Latent message encoder
         self.message_encoder = nn.Sequential(
             nn.Linear(config.d_model, config.d_model),
             nn.LayerNorm(config.d_model),
             nn.GELU(),
-            nn.Linear(config.d_model, config.d_model // 2)  # Compresión
+            nn.Linear(config.d_model, config.d_model // 2)  # Compression
         )
         
-        # Decodificador de mensajes
+        # Message decoder
         self.message_decoder = nn.Sequential(
             nn.Linear(config.d_model // 2, config.d_model),
             nn.LayerNorm(config.d_model),
             nn.GELU()
         )
         
-        # Mezclador de mensajes recibidos
+        # Received message mixer
         self.mixing_layer = nn.MultiheadAttention(
             embed_dim=config.d_model,
             num_heads=8,
@@ -133,34 +133,34 @@ class LatentCommunicationChannel(nn.Module):
         )
     
     def encode_message(self, representation: torch.Tensor) -> torch.Tensor:
-        """Codificar representación a mensaje latente comprimido"""
+        """Encode representation to compressed latent message"""
         return self.message_encoder(representation)
     
     def decode_message(self, message: torch.Tensor) -> torch.Tensor:
-        """Decodificar mensaje latente a representación"""
+        """Decode latent message to representation"""
         return self.message_decoder(message)
     
     def broadcast(self, sender_repr: torch.Tensor, recipients: List[torch.Tensor]) -> List[torch.Tensor]:
         """
-        Broadcast de mensaje latente a múltiples agentes
+        Broadcast latent message to multiple agents
         
         Args:
-            sender_repr: Representación del agente emisor
-            recipients: Lista de representaciones de agentes receptores
+            sender_repr: Sender agent representation
+            recipients: List of recipient agent representations
         
         Returns:
-            Lista de representaciones actualizadas
+            List of updated representations
         """
-        # Codificar mensaje
+        # Encode message
         message = self.encode_message(sender_repr)
         
-        # Transmitir a cada receptor
+        # Transmit to each recipient
         updated = []
         for recipient in recipients:
-            # Decodificar para este receptor
+            # Decode for this recipient
             decoded = self.decode_message(message)
             
-            # Mezclar con representación actual
+            # Mix with current representation
             mixed, _ = self.mixing_layer(
                 decoded.unsqueeze(1),
                 recipient.unsqueeze(1),
@@ -174,8 +174,8 @@ class LatentCommunicationChannel(nn.Module):
 
 class LatentAgent(nn.Module):
     """
-    Agente individual en LatentMAS
-    Opera directamente en espacio latente
+    Individual agent in LatentMAS
+    Operates directly in latent space
     """
     
     def __init__(self, agent_id: int, config: LatentMASConfig, base_model: nn.Module):
@@ -183,13 +183,13 @@ class LatentAgent(nn.Module):
         self.agent_id = agent_id
         self.config = config
         
-        # Copia del modelo base (compartido o individual)
+        # Copy of base model (shared or individual)
         self.model = base_model
         
-        # Memoria de trabajo
+        # Working memory
         self.memory_bank = AgentMemoryBank(config)
         
-        # Especialización del agente
+        # Agent specialization
         self.specialization_proj = nn.Linear(config.d_model, config.d_model)
         
         # Capacidad de consenso
@@ -199,11 +199,11 @@ class LatentAgent(nn.Module):
         )
     
     def perceive(self, input_ids: torch.Tensor) -> torch.Tensor:
-        """Percibir input y generar representación"""
+        """Perceive input and generate representation"""
         with torch.no_grad():
             hidden = self.model.get_hidden_states(input_ids)
         
-        # Aplicar especialización
+        # Apply specialization
         specialized = self.specialization_proj(hidden)
         
         return specialized
@@ -211,13 +211,13 @@ class LatentAgent(nn.Module):
     def communicate(self, other_agents: List['LatentAgent'], 
                    communication_channel: LatentCommunicationChannel) -> torch.Tensor:
         """
-        Comunicarse con otros agentes en espacio latente
+        Communicate with other agents in latent space
         """
-        # Obtener representación actual
+        # Get current representation
         my_repr = self.memory_bank.working_memory[-1] if self.memory_bank.working_memory else \
                   torch.zeros(1, self.config.d_model)
         
-        # Obtener representaciones de otros agentes
+        # Get representations from other agents
         other_reprs = []
         for agent in other_agents:
             if agent.agent_id != self.agent_id and agent.memory_bank.working_memory:
@@ -226,10 +226,10 @@ class LatentAgent(nn.Module):
         if not other_reprs:
             return my_repr
         
-        # Broadcast y recibir actualizaciones
+        # Broadcast and receive updates
         updated = communication_channel.broadcast(my_repr, other_reprs)
         
-        # Consenso: promediar con pesos
+        # Consensus: weighted average
         consensus_repr = torch.stack(updated).mean(dim=0)
         
         # Gate para mezclar
@@ -241,7 +241,7 @@ class LatentAgent(nn.Module):
         return final_repr
     
     def decide(self, representation: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Tomar decisión basada en representación actual"""
+        """        Make decision based on current representation"""
         # Forward through model head
         logits = self.model.lm_head(representation)
         
@@ -250,14 +250,14 @@ class LatentAgent(nn.Module):
 
 class LatentMAS(nn.Module):
     """
-    Sistema Multi-Agente en Espacio Latente completo
+    Complete Multi-Agent System in Latent Space
     """
     
     def __init__(self, config: LatentMASConfig, base_model: nn.Module):
         super().__init__()
         self.config = config
         
-        # Canal de comunicación compartido
+        # Shared communication channel
         self.communication_channel = LatentCommunicationChannel(config)
         
         # Crear agentes
@@ -266,17 +266,17 @@ class LatentMAS(nn.Module):
             for i in range(config.n_agents)
         ])
         
-        # Mecanismo de consenso global
+        # Global consensus mechanism
         self.global_consensus = nn.MultiheadAttention(
             embed_dim=config.d_model,
             num_heads=config.n_agents,
             batch_first=True
         )
         
-        # Cabeza de decisión consensuada
+        # Consensus decision head
         self.consensus_head = nn.Linear(config.d_model, 50000)
         
-        # Estadísticas
+        # Statistics
         self.tokens_used_traditional = 0
         self.tokens_used_latent = 0
         self.science_tasks_correct = 0
@@ -285,32 +285,32 @@ class LatentMAS(nn.Module):
     def collaborative_solve(self, problem_input: torch.Tensor, 
                              n_rounds: Optional[int] = None) -> Tuple[torch.Tensor, Dict]:
         """
-        Resolver problema colaborativamente
+        Solve problem collaboratively
         
         Args:
-            problem_input: Input compartido
-            n_rounds: Número de rondas de comunicación
+            problem_input: Shared input
+            n_rounds: Number of communication rounds
         
         Returns:
-            logits: Decisión consensuada
-            metrics: Estadísticas de comunicación
+            logits: Consensus decision
+            metrics: Communication statistics
         """
         if n_rounds is None:
             n_rounds = self.config.communication_rounds
         
-        # Fase 1: Percepción individual
+        # Phase 1: Individual perception
         agent_representations = []
         for agent in self.agents:
             repr = agent.perceive(problem_input)
             agent.memory_bank.store(repr, f"init_{agent.agent_id}")
             agent_representations.append(repr)
         
-        # Fase 2: Rondas de comunicación
+        # Phase 2: Communication rounds
         for round_idx in range(n_rounds):
             new_representations = []
             
             for agent in self.agents:
-                # Comunicarse con otros agentes
+                # Communicate with other agents
                 comm_repr = agent.communicate(self.agents, self.communication_channel)
                 
                 # Almacenar
@@ -319,31 +319,31 @@ class LatentMAS(nn.Module):
             
             agent_representations = new_representations
         
-        # Fase 3: Consenso global
+        # Phase 3: Global consensus
         repr_stack = torch.stack(agent_representations, dim=1)  # (B, n_agents, d_model)
         
         consensus_repr, _ = self.global_consensus(
             repr_stack, repr_stack, repr_stack
         )
         
-        # Decisión final
-        final_repr = consensus_repr.mean(dim=1)  # Promedio sobre agentes
+        # Final decision
+        final_repr = consensus_repr.mean(dim=1)  # Average over agents
         logits = self.consensus_head(final_repr)
         
-        # Calcular métricas
+        # Compute metrics
         metrics = self._compute_metrics(n_rounds)
         
         return logits, metrics
     
     def _compute_metrics(self, n_rounds: int) -> Dict:
-        """Calcular métricas de LatentMAS"""
-        # Tokens que se habrían usado con comunicación tradicional (texto)
-        tokens_traditional = n_rounds * self.config.n_agents * 100  # ~100 tokens por mensaje
+        """Compute LatentMAS metrics"""
+        # Tokens that would be used with traditional (text) communication
+        tokens_traditional = n_rounds * self.config.n_agents * 100  # ~100 tokens per message
         
-        # Tokens usados en LatentMAS (prácticamente 0, solo latentes)
-        tokens_latent = n_rounds * self.config.n_agents * 2  # Mínimo overhead
+        # Tokens used in LatentMAS (near 0, only latents)
+        tokens_latent = n_rounds * self.config.n_agents * 2  # Minimum overhead
         
-        # Reducción
+        # Reduction
         reduction = 1 - (tokens_latent / tokens_traditional)
         
         return {
@@ -357,7 +357,7 @@ class LatentMAS(nn.Module):
     
     def evaluate_science_reasoning(self, problem_input: torch.Tensor, 
                                   ground_truth: torch.Tensor) -> Tuple[bool, Dict]:
-        """Evaluar razonamiento científico"""
+        """Evaluate scientific reasoning"""
         logits, metrics = self.collaborative_solve(problem_input)
         
         prediction = logits.argmax(dim=-1)
@@ -376,7 +376,7 @@ class LatentMAS(nn.Module):
         return correct, metrics
     
     def get_system_stats(self) -> Dict:
-        """Obtener estadísticas del sistema"""
+        """Get system statistics"""
         if self.science_tasks_total == 0:
             return {}
         

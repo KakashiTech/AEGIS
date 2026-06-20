@@ -1,9 +1,9 @@
 """
-Razonamiento Latente: Abstract-CoT y VSA
+Latent Reasoning: Abstract-CoT and VSA
 
-Implementa "pensar sin palabras" mediante:
-- Tokens abstractos como bloc de notas latente
-- Álgebra hiperdimensional con VSA
+Implements "think without words" via:
+- Abstract tokens as latent scratchpad
+- Hyperdimensional algebra with VSA
 """
 
 import torch
@@ -17,11 +17,11 @@ import random
 
 @dataclass
 class AbstractCoTConfig:
-    """Configuración para Abstract Chain-of-Thought"""
-    num_abstract_tokens: int = 256  # Tamaño del vocabulario reservado
+    """Configuration for Abstract Chain-of-Thought"""
+    num_abstract_tokens: int = 256  # Reserved vocabulary size
     d_model: int = 768
     max_reasoning_steps: int = 32
-    binding_dim: int = 10000  # Dimensión hiperdimensional VSA
+    binding_dim: int = 10000  # Hyperdimensional VSA dimension
     use_vsa: bool = True
     temperature: float = 0.8
     top_k: int = 10
@@ -29,8 +29,8 @@ class AbstractCoTConfig:
 
 class CircularConvolution(nn.Module):
     """
-    Operación de Binding (⊛) mediante convolución circular
-    Vincula roles y entidades: "Agente" ⊛ "Humano"
+    Binding operation (⊛) via circular convolution
+    Binds roles and entities: "Agent" ⊛ "Human"
     """
     
     def __init__(self, dim: int):
@@ -39,7 +39,7 @@ class CircularConvolution(nn.Module):
     
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         """
-        Convolución circular entre dos vectores hiperdimensionales
+        Circular convolution between two hyperdimensional vectors
         
         Args:
             a, b: (..., dim)
@@ -50,22 +50,22 @@ class CircularConvolution(nn.Module):
         a_fft = torch.fft.fft(a.float(), dim=-1)
         b_fft = torch.fft.fft(b.float(), dim=-1)
         
-        # Multiplicación en frecuencia
+        # Frequency-domain multiplication
         bound_fft = a_fft * b_fft
         
-        # IFFT para obtener resultado
+        # IFFT to obtain result
         bound = torch.fft.ifft(bound_fft, dim=-1).real
         
         return bound
     
     def inverse(self, bound: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
         """
-        Desvinculación: dado a ⊛ b y a, recuperar b
+        Unbinding: given a ⊛ b and a, recover b
         """
         a_fft = torch.fft.fft(a.float(), dim=-1)
         bound_fft = torch.fft.fft(bound.float(), dim=-1)
         
-        # División en frecuencia
+        # Frequency-domain division
         b_fft = bound_fft / (a_fft + 1e-10)
         
         b = torch.fft.ifft(b_fft, dim=-1).real
@@ -74,7 +74,7 @@ class CircularConvolution(nn.Module):
 
 class HyperdimensionalEncoder(nn.Module):
     """
-    Codificador de símbolos a espacio hiperdimensional
+    Encoder of symbols to hyperdimensional space
     """
     
     def __init__(self, vocab_size: int, dim: int, num_positions: int = 512):
@@ -83,25 +83,25 @@ class HyperdimensionalEncoder(nn.Module):
         self.dim = dim
         self.num_positions = num_positions
         
-        # Vectores base aleatorios para cada símbolo
+        # Random base vectors for each symbol
         self.symbol_vectors = nn.Parameter(
             torch.randn(vocab_size, dim) / math.sqrt(dim)
         )
         
-        # Vectores de posición
+        # Position vectors
         self.position_vectors = nn.Parameter(
             self._generate_position_vectors(num_positions, dim)
         )
     
     def _generate_position_vectors(self, n: int, d: int) -> torch.Tensor:
-        """Generar vectores de posición usando patrones de fase"""
+        """Generate position vectors using phase patterns"""
         positions = torch.arange(n).unsqueeze(1).float()
         dims = torch.arange(d).unsqueeze(0).float()
         
-        # Patrones de fase
+        # Phase patterns
         phase = positions * (2 ** (-dims / d))
         
-        # Codificación
+        # Encoding
         vectors = torch.where(
             dims % 2 == 0,
             torch.sin(phase),
@@ -112,25 +112,25 @@ class HyperdimensionalEncoder(nn.Module):
     
     def encode(self, symbols: torch.Tensor, positions: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
-        Codificar símbolos a espacio hiperdimensional
+        Encode symbols to hyperdimensional space
         
         Args:
-            symbols: (B, L) índices de símbolos
-            positions: (B, L) posiciones (opcional)
+            symbols: (B, L) symbol indices
+            positions: (B, L) positions (optional)
         Returns:
-            encoded: (B, L, dim) vectores hiperdimensionales
+            encoded: (B, L, dim) hyperdimensional vectors
         """
         batch_size, seq_len = symbols.shape
         
-        # Lookup de vectores de símbolo
+        # Symbol vector lookup
         symbol_vecs = F.embedding(symbols, self.symbol_vectors)  # (B, L, dim)
         
-        # Añadir posición si se proporciona
+        # Add position if provided
         if positions is not None:
             pos_vecs = F.embedding(positions, self.position_vectors)
             symbol_vecs = symbol_vecs + pos_vecs
         
-        # Binarizar (opcional para VSA clásica)
+        # Binarize (optional for classical VSA)
         # symbol_vecs = torch.where(symbol_vecs > 0, 1.0, -1.0)
         
         return symbol_vecs
@@ -138,11 +138,11 @@ class HyperdimensionalEncoder(nn.Module):
 
 class VSAModule(nn.Module):
     """
-    Módulo de Vector Symbolic Architecture
+    Vector Symbolic Architecture Module
     
-    Operaciones:
-    - Binding (⊛): Vincula roles y entidades
-    - Bundling (+): Superposición de hechos
+    Operations:
+    - Binding (⊛): Binds roles and entities
+    - Bundling (+): Fact superposition
     """
     
     def __init__(self, config: AbstractCoTConfig):
@@ -152,49 +152,52 @@ class VSAModule(nn.Module):
         
         # Codificadores
         self.entity_encoder = HyperdimensionalEncoder(
-            vocab_size=10000,  # Tamaño de vocabulario de entidades
+            vocab_size=10000,  # Entity vocabulary size
             dim=self.dim,
             num_positions=128
         )
         
         self.role_encoder = HyperdimensionalEncoder(
-            vocab_size=100,  # Roles: agente, paciente, acción, etc.
+            vocab_size=100,  # Roles: agent, patient, action, etc.
             dim=self.dim,
             num_positions=10
         )
         
-        # Operación de binding
+        # Binding operation
         self.binding = CircularConvolution(self.dim)
         
-        # Red de atención sobre superposiciones
+        # Attention network over superpositions
         self.attention = nn.MultiheadAttention(
             embed_dim=self.dim,
             num_heads=8,
             batch_first=True
         )
         
-        # Decodificador
+        # Decoder
         self.decoder = nn.Sequential(
             nn.Linear(self.dim, self.dim // 2),
             nn.GELU(),
             nn.Linear(self.dim // 2, config.d_model)
         )
+        
+        # Input projection (registered submodule for gradient flow)
+        self.input_proj = nn.Linear(config.d_model, self.dim) if config.d_model != self.dim else nn.Identity()
     
     def bind(self, role: torch.Tensor, entity: torch.Tensor) -> torch.Tensor:
         """
         Binding: role ⊛ entity
         
         Args:
-            role: (B, dim) vector de rol
-            entity: (B, dim) vector de entidad
+            role: (B, dim) role vector
+            entity: (B, dim) entity vector
         Returns:
-            bound: (B, dim) vector vinculado
+            bound: (B, dim) bound vector
         """
         return self.binding(role, entity)
     
     def bundle(self, vectors: List[torch.Tensor]) -> torch.Tensor:
         """
-        Bundling: Superposición de múltiples vectores
+        Bundling: Superposition of multiple vectors
         v_sum = v1 + v2 + ... + vn
         """
         if not vectors:
@@ -202,7 +205,7 @@ class VSAModule(nn.Module):
         
         stacked = torch.stack(vectors, dim=1)  # (B, N, dim)
         
-        # Sumar con normalización
+        # Sum with normalization
         bundled = stacked.sum(dim=1)  # (B, dim)
         bundled = F.normalize(bundled, p=2, dim=-1) * math.sqrt(self.dim)
         
@@ -212,30 +215,30 @@ class VSAModule(nn.Module):
                          memory: torch.Tensor, 
                          query_role: torch.Tensor) -> torch.Tensor:
         """
-        Desvincular y consultar en memoria
+        Unbind and query memory
         
         Args:
-            memory: (B, N, dim) memoria superpuesta
-            query_role: (B, dim) rol a consultar
+            memory: (B, N, dim) superimposed memory
+            query_role: (B, dim) role to query
         Returns:
-            result: (B, dim) entidad recuperada
+            result: (B, dim) recovered entity
         """
         batch_size = memory.size(0)
         num_facts = memory.size(1)
         
-        # Expandir query para todos los hechos
+        # Expand query for all facts
         query_expanded = query_role.unsqueeze(1).expand(-1, num_facts, -1)
         
-        # Desvincular cada hecho
+        # Unbind each fact
         results = []
         for i in range(num_facts):
             unbound = self.binding.inverse(memory[:, i], query_expanded[:, i])
             results.append(unbound)
         
-        # Combinar resultados
+        # Combine results
         result = torch.stack(results, dim=1).mean(dim=1)
         
-        # Atención sobre el resultado
+        # Attention on result
         result, _ = self.attention(
             result.unsqueeze(1),
             memory,
@@ -249,9 +252,9 @@ class VSAModule(nn.Module):
                          entities: List[str],
                          device: str = "cuda") -> torch.Tensor:
         """
-        Codificar una estructura compleja (ej: "Juan come manzana")
+        Encode a complex structure (e.g., "John eats apple")
         """
-        # Convertir a índices
+        # Convert to indices
         role_indices = torch.tensor(
             [hash(r) % 100 for r in roles],
             device=device
@@ -261,24 +264,24 @@ class VSAModule(nn.Module):
             device=device
         ).unsqueeze(0)
         
-        # Codificar
+        # Encode
         role_vecs = self.role_encoder.encode(role_indices)
         entity_vecs = self.entity_encoder.encode(entity_indices)
         
-        # Vincular cada par
+        # Bind each pair
         bound_vecs = []
         for r, e in zip(role_vecs[0], entity_vecs[0]):
             bound = self.bind(r.unsqueeze(0), e.unsqueeze(0))
             bound_vecs.append(bound)
         
-        # Bundling final
+        # Final bundling
         memory = self.bundle(bound_vecs)
         
         return memory
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Procesar entrada con operaciones VSA
+        Process input with VSA operations
         
         Args:
             x: (B, L, d_model)
@@ -287,30 +290,28 @@ class VSAModule(nn.Module):
         """
         batch_size, seq_len, _ = x.shape
         
-        # Proyectar a espacio hiperdimensional
-        # Simplificación: usar proyección lineal
-        proj = nn.Linear(x.size(-1), self.dim, device=x.device)
-        x_hd = proj(x)  # (B, L, dim)
+        # Project to HD space using registered projection
+        x_hd = self.input_proj(x)  # (B, L, dim)
         
-        # Aplicar binding con roles posicionales
+        # Apply binding with positional roles
         role_indices = torch.arange(seq_len, device=x.device) % 100
         role_vecs = self.role_encoder.encode(
             role_indices.unsqueeze(0).expand(batch_size, -1)
         )
         
-        # Vincular cada posición con su rol
+        # Bind each position to its role
         bound = []
         for i in range(seq_len):
             b = self.bind(x_hd[:, i], role_vecs[:, i])
             bound.append(b)
         
-        # Bundling de toda la secuencia
+        # Bundling of the entire sequence
         memory = self.bundle(bound)
         
-        # Expandir de vuelta a longitud de secuencia
+        # Expand back to sequence length
         memory_expanded = memory.unsqueeze(1).expand(-1, seq_len, -1)
         
-        # Decodificar
+        # Decode
         output = self.decoder(memory_expanded)
         
         return output
@@ -318,7 +319,7 @@ class VSAModule(nn.Module):
 
 class AbstractTokenizer:
     """
-    Tokenizador para vocabulario de tokens abstractos
+    Tokenizer for abstract token vocabulary
     """
     
     def __init__(self, num_tokens: int = 256):
@@ -333,11 +334,11 @@ class AbstractTokenizer:
         self.vocab_size = num_tokens + len(self.special_tokens)
     
     def encode_thought(self, thought_type: str) -> int:
-        """Obtener token para tipo de pensamiento"""
+        """Get token for thought type"""
         return self.special_tokens.get(f'<{thought_type}>', 0)
     
     def get_abstract_token(self, index: int) -> int:
-        """Obtener token abstracto por índice"""
+        """Get abstract token by index"""
         return index % self.num_tokens
 
 
@@ -365,24 +366,24 @@ class AbstractCoT(nn.Module):
     """
     Abstract Chain-of-Thought
     
-    "Pensar sin palabras" usando tokens abstractos como bloc de notas latente.
-    Eficiencia: medida dinámicamente vía get_efficiency_ratio() — no hardcodeada.
+    "Think without words" using abstract tokens as a latent scratchpad.
+    Efficiency: measured dynamically via get_efficiency_ratio() — not hardcoded.
     """
     
     def __init__(self, config: AbstractCoTConfig):
         super().__init__()
         self.config = config
         
-        # Tokenizador abstracto
+        # Abstract tokenizer
         self.tokenizer = AbstractTokenizer(config.num_abstract_tokens)
         
-        # Embedding de tokens abstractos
+        # Abstract token embedding
         self.abstract_embed = nn.Embedding(
             self.tokenizer.vocab_size,
             config.d_model
         )
         
-        # Controlador de razonamiento
+        # Reasoning controller
         self.reasoning_controller = nn.LSTM(
             input_size=config.d_model,
             hidden_size=config.d_model,
@@ -391,30 +392,30 @@ class AbstractCoT(nn.Module):
             dropout=0.1
         )
         
-        # Generador de tokens abstractos
+        # Abstract token generator
         self.token_generator = nn.Sequential(
             nn.Linear(config.d_model, config.d_model),
             nn.GELU(),
             nn.Linear(config.d_model, self.tokenizer.vocab_size)
         )
         
-        # Módulo VSA
+        # VSA module
         if config.use_vsa:
             self.vsa = VSAModule(config)
         else:
             self.vsa = None
         
-        # Atención cruzada: razonamiento -> output
+        # Cross attention: reasoning -> output
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=config.d_model,
             num_heads=8,
             batch_first=True
         )
         
-        # Capa de salida
+        # Output layer
         self.output_proj = nn.Linear(config.d_model, config.d_model)
         
-        # Gate para mezclar información
+        # Gate to mix information
         self.gate = nn.Sequential(
             nn.Linear(config.d_model * 2, config.d_model),
             nn.Sigmoid()
@@ -424,14 +425,14 @@ class AbstractCoT(nn.Module):
                                    context: torch.Tensor,
                                    num_steps: Optional[int] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Generar secuencia de razonamiento abstracto
+        Generate abstract reasoning sequence
         
         Args:
-            context: (B, L, d_model) contexto de entrada
-            num_steps: Número de pasos de razonamiento (default: max_reasoning_steps)
+            context: (B, L, d_model) input context
+            num_steps: Number of reasoning steps (default: max_reasoning_steps)
         Returns:
-            abstract_tokens: (B, num_steps) índices de tokens
-            reasoning_states: (B, num_steps, d_model) estados de razonamiento
+            abstract_tokens: (B, num_steps) token indices
+            reasoning_states: (B, num_steps, d_model) reasoning states
         """
         if num_steps is None:
             num_steps = self.config.max_reasoning_steps
@@ -439,14 +440,14 @@ class AbstractCoT(nn.Module):
         batch_size = context.size(0)
         device = context.device
         
-        # Estado inicial: promedio del contexto
+        # Initial state: context average
         h0 = context.mean(dim=1, keepdim=True).transpose(0, 1)  # (1, B, d)
         h0 = h0.expand(2, -1, -1).contiguous()  # (num_layers, B, d)
         c0 = torch.zeros_like(h0)
         
         hidden = (h0, c0)
         
-        # Token inicial
+        # Initial token
         current_token = torch.full(
             (batch_size, 1),
             self.tokenizer.encode_thought('think'),
@@ -462,7 +463,7 @@ class AbstractCoT(nn.Module):
             token_emb = self.abstract_embed(current_token.squeeze(1))  # (B, d)
             token_emb = token_emb.unsqueeze(1)  # (B, 1, d)
             
-            # Paso LSTM
+            # Step LSTM
             lstm_out, hidden = self.reasoning_controller(token_emb, hidden)
             state = lstm_out.squeeze(1)  # (B, d)
             states.append(state)
@@ -470,7 +471,7 @@ class AbstractCoT(nn.Module):
             # Generar siguiente token
             logits = self.token_generator(state)  # (B, vocab_size)
             
-            # Sample con temperatura
+            # Sample with temperature
             probs = F.softmax(logits / self.config.temperature, dim=-1)
             
             # Top-k sampling
@@ -483,7 +484,7 @@ class AbstractCoT(nn.Module):
             
             tokens.append(current_token.squeeze(1))
             
-            # Detener si se genera token de fin
+            # Stop if end token generated
             if (current_token == self.tokenizer.encode_thought('end')).all():
                 break
         
@@ -497,17 +498,17 @@ class AbstractCoT(nn.Module):
                 context: torch.Tensor,
                 use_reasoning: bool = True) -> Dict[str, torch.Tensor]:
         """
-        Forward pass con Abstract-CoT
+        Forward pass with Abstract-CoT
         
         Args:
             input_ids: (B, L)
-            context: (B, L, d_model) representaciones del encoder
-            use_reasoning: Si usar razonamiento abstracto
+            context: (B, L, d_model) encoder representations
+            use_reasoning: Whether to use abstract reasoning
         Returns:
-            dict con output, tokens abstractos, estados de razonamiento
+            dict with output, abstract tokens, reasoning states
         """
         if not use_reasoning or not self.training:
-            # Modo inference sin razonamiento explícito
+            # Inference mode without explicit reasoning
             return {
                 'output': context,
                 'abstract_tokens': None,
@@ -517,18 +518,18 @@ class AbstractCoT(nn.Module):
         # Generar secuencia de razonamiento abstracto
         abstract_tokens, reasoning_states = self.generate_abstract_sequence(context)
         
-        # Procesar con VSA si está habilitado
+        # Process with VSA if enabled
         if self.vsa is not None:
             reasoning_states = self.vsa(reasoning_states)
         
-        # Atención cruzada: razonamiento enriquece contexto
+        # Cross attention: reasoning enriches context
         context_enhanced, _ = self.cross_attention(
             query=context,
             key=reasoning_states,
             value=reasoning_states
         )
         
-        # Gate para mezclar
+        # Gate to mix
         gate_input = torch.cat([context, context_enhanced], dim=-1)
         g = self.gate(gate_input)
         
@@ -546,8 +547,8 @@ class AbstractCoT(nn.Module):
                                   input_ids: torch.Tensor, 
                                   abstract_tokens: torch.Tensor) -> float:
         """
-        Calcular ratio de eficiencia: tokens verbales / tokens abstractos.
-        Usa el measured ratio de get_efficiency_ratio(), no un valor hardcodeado.
+        Calculate efficiency ratio: verbal tokens / abstract tokens.
+        Uses the measured ratio from get_efficiency_ratio(), not a hardcoded value.
         """
         verbal_tokens = input_ids.size(1)
         abstract_count = abstract_tokens.size(1) if abstract_tokens is not None else 1
@@ -556,7 +557,7 @@ class AbstractCoT(nn.Module):
     
     def decode_abstract(self, tokens: torch.Tensor) -> List[str]:
         """
-        Decodificar tokens abstractos a representación legible (para debugging)
+        Decode abstract tokens to readable representation (for debugging)
         """
         decoded = []
         for seq in tokens:

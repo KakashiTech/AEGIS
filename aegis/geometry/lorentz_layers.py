@@ -1,8 +1,8 @@
 """
-Capas Geométricas: Lorentz Neural Networks (LNN)
+Geometric Layers: Lorentz Neural Networks (LNN)
 
-Implementación de espacios de Lorentz y métricas de Minkowski
-para estructuras jerárquicas sin distorsión.
+Lorentz space and Minkowski metric implementation
+For hierarchical structures without distortion.
 """
 
 import torch
@@ -14,7 +14,7 @@ from typing import Optional, Tuple
 
 class LorentzManifold:
     """
-    Variedad de Lorentz con métrica de Minkowski
+    Lorentz manifold with Minkowski metric
     diag(-1, 1, 1, ..., 1)
     """
     
@@ -25,7 +25,7 @@ class LorentzManifold:
         
     def minkowski_dot(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
-        Producto interno de Minkowski
+        Minkowski inner product
         <x, y>_L = -x_0*y_0 + sum(x_i*y_i for i=1 to D)
         """
         # x, y: (..., D+1)
@@ -36,12 +36,12 @@ class LorentzManifold:
         return time_dot + space_dot
     
     def minkowski_norm(self, x: torch.Tensor) -> torch.Tensor:
-        """Norma de Minkowski (puede ser negativa)"""
+        """Minkowski norm (can be negative)"""
         return self.minkowski_dot(x, x)
     
     def lorentzian_distance(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
-        Distancia en la variedad de Lorentz
+        Distance in Lorentz manifold
         d_L(x, y) = arccosh(-<x, y>_L)
         """
         dot = -self.minkowski_dot(x, y)
@@ -51,7 +51,7 @@ class LorentzManifold:
     
     def expmap0(self, v: torch.Tensor) -> torch.Tensor:
         """
-        Mapeo exponencial desde el origen
+        Exponential map from origin
         """
         v_norm = torch.sqrt(torch.clamp(
             self.minkowski_norm(v), min=self.eps
@@ -66,7 +66,7 @@ class LorentzManifold:
     
     def logmap0(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Mapeo logarítmico al origen
+        Logarithmic map to origin
         """
         x_norm = torch.sqrt(torch.clamp(
             self.minkowski_norm(x), min=self.eps
@@ -82,7 +82,7 @@ class LorentzManifold:
     
     def proj(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Proyección a la variedad de Lorentz
+        Projection to Lorentz manifold
         """
         # Normalizar para estar en el hiperboloide
         x_norm = torch.sqrt(torch.clamp(
@@ -92,16 +92,16 @@ class LorentzManifold:
         # Asegurar componente temporal positiva
         x_proj = x / x_norm.unsqueeze(-1)
         x_proj = torch.abs(x_proj)
-        x_proj[..., 0] = -x_proj[..., 0]  # Negativo por convención de firma
+        x_proj[..., 0] = -x_proj[..., 0]  # Negative by signature convention
         
         return x_proj
 
 
 class LorentzLinear(nn.Module):
     """
-    Capa lineal en el espacio de Lorentz
+    Linear layer in Lorentz space
     
-    Implementa distancia al hiperplano:
+    Implements distance to hyperplane:
     d_signed = (1/sqrt(κ)) * arcsinh(sqrt(κ) * <x, v>_L)
     """
     
@@ -123,7 +123,7 @@ class LorentzLinear(nn.Module):
         self._init_weights()
     
     def _init_weights(self):
-        """Inicializar pesos respetando la geometría de Lorentz"""
+        """Initialize weights respecting Lorentz geometry"""
         with torch.no_grad():
             # Proyectar pesos a la variedad
             for i in range(self.out_features):
@@ -149,16 +149,16 @@ class LorentzLinear(nn.Module):
         x_expanded = x.unsqueeze(-2)  # (B, ..., 1, in_features+1)
         w_expanded = self.weight.unsqueeze(0)  # (1, out_features, in_features+1)
         
-        # Broadcast automático: (B, ..., out_features)
+        # Automatic broadcast: (B, ..., out_features)
         time_dot = -x_expanded[..., 0] * w_expanded[..., 0]  # (B, ..., out_features)
         space_dot = (x_expanded[..., 1:] * w_expanded[..., 1:]).sum(dim=-1)  # (B, ..., out_features)
         dot = time_dot + space_dot
         
-        # Fórmula: d_signed = (1/sqrt(κ)) * arcsinh(sqrt(κ) * dot)
+        # Formula: d_signed = (1/sqrt(κ)) * arcsinh(sqrt(κ) * dot)
         scaled_dot = math.sqrt(self.curvature) * dot
         output = (1.0 / math.sqrt(self.curvature)) * torch.asinh(scaled_dot)
         
-        # Añadir bias
+        # Add bias
         output = output + self.bias
         
         return output
@@ -166,7 +166,7 @@ class LorentzLinear(nn.Module):
 
 class LorentzProjection(nn.Module):
     """
-    Proyección de espacio euclidiano a variedad de Lorentz
+    Projection from Euclidean to Lorentz
     """
     
     def __init__(self, euclidean_dim: int, lorentz_dim: int, curvature: float = 1.0):
@@ -189,7 +189,7 @@ class LorentzProjection(nn.Module):
         # Mapear a espacio tangente en el origen
         v = self.to_tangent(x)  # (B, ..., lorentz_dim)
         
-        # Extender con dimensión temporal (componente 0)
+        # Extend with time dimension (component 0)
         v_ext = F.pad(v, (1, 0), value=0.0)  # (B, ..., lorentz_dim+1)
         
         # Aplicar mapeo exponencial
@@ -203,7 +203,7 @@ class LorentzProjection(nn.Module):
 
 class PoincareProjection(nn.Module):
     """
-    Proyección entre espacio de Lorentz y disco de Poincaré
+    Lorentz to Poincare disk projection
     """
     
     def __init__(self, dim: int, curvature: float = 1.0):
@@ -214,7 +214,7 @@ class PoincareProjection(nn.Module):
     
     def lorentz_to_poincare(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Proyección estereográfica: Lorentz -> Poincaré
+        Stereographic projection: Lorentz -> Poincare
         x_poincare = x_space / (x_0 + 1)
         """
         x_0 = x[..., 0:1]
@@ -224,7 +224,7 @@ class PoincareProjection(nn.Module):
     
     def poincare_to_lorentz(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Inversa: Poincaré -> Lorentz
+        Inverse: Poincare -> Lorentz
         """
         x_norm_sq = (x ** 2).sum(dim=-1, keepdim=True)
         
@@ -238,12 +238,12 @@ class PoincareProjection(nn.Module):
     
     def poincare_distance(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
-        Distancia en el disco de Poincaré
+        Distance in Poincare disk
         """
         x_norm = torch.norm(x, dim=-1, keepdim=True)
         y_norm = torch.norm(y, dim=-1, keepdim=True)
         
-        # Distancia de Poincaré
+        # Poincare distance
         num = 2 * torch.norm(x - y, dim=-1, keepdim=True) ** 2
         den = (1 - x_norm ** 2) * (1 - y_norm ** 2)
         
@@ -252,7 +252,7 @@ class PoincareProjection(nn.Module):
 
 class LorentzAttention(nn.Module):
     """
-    Mecanismo de atención en espacio de Lorentz
+    Attention mechanism in Lorentz space
     """
     
     def __init__(self, dim: int, num_heads: int = 8, curvature: float = 1.0):
@@ -287,10 +287,10 @@ class LorentzAttention(nn.Module):
         k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         
-        # Atención con distancias de Lorentz
+        # Attention with Lorentz distances
         scores = []
         for h in range(self.num_heads):
-            # Calcular distancias lorentzianas
+            #         Compute Lorentzian distances
             dist_matrix = []
             for i in range(seq_len):
                 dists = []
@@ -301,14 +301,14 @@ class LorentzAttention(nn.Module):
                     dists.append(dist)
                 dist_matrix.append(torch.stack(dists, dim=1))
             
-            # Convertir a scores (menor distancia = mayor atención)
+            # Convert to scores (smaller distance = higher attention)
             score = -torch.stack(dist_matrix, dim=1) / math.sqrt(self.head_dim)
             scores.append(score)
         
         attn_weights = torch.stack(scores, dim=1)
         attn_weights = F.softmax(attn_weights, dim=-1)
         
-        # Aplicar atención
+        # Apply attention
         output = torch.matmul(attn_weights, v)
         output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.dim)
         

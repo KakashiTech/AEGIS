@@ -1,5 +1,5 @@
 """
-Métricas de verificación de aprendizaje real.
+Learning verification metrics.
 """
 
 import torch
@@ -8,7 +8,7 @@ from typing import Dict, Tuple
 
 
 def compute_param_delta(model: nn.Module, snapshots: Dict[str, torch.Tensor]) -> Dict[str, float]:
-    """Calcular delta absoluto medio por parámetro."""
+    """Compute mean absolute delta per parameter."""
     deltas = {}
     for name, param in model.named_parameters():
         if param.requires_grad and name in snapshots:
@@ -24,7 +24,7 @@ def verify_learning_signal(
     param_delta_threshold: float = 1e-10,
 ) -> Tuple[bool, Dict[str, any]]:
     """
-    Verificar si un step produjo señal de aprendizaje real.
+    Check if a step produced real learning signal.
 
     Returns:
         (is_learning, diagnostics)
