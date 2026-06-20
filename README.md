@@ -43,7 +43,7 @@ All aspirational claims have CPU-validated methodology. See `CLAIMS_EVIDENCE.md`
 ```bash
 pip install -r requirements.txt
 bash reproduce.sh            # Full pipeline: tests + benchmarks + demos (~12 min CPU)
-python -m pytest tests/       # 89 tests — all pass
+python -m pytest tests/       # 89 tests in 12 files — all pass
 ```
 
 ## Architecture
@@ -80,9 +80,29 @@ aegis/
 
 - A correct implementation of Diagonal++ SSM with CPU benchmarks
 - A mathematical proof that O(dS) recurrence bounds error vs O(dS²)
+- **19,658 lines of Python** across 12 test files (89 tests) and 15 modules
 - A reproducible experiment suite (all results verifiable on a laptop)
 - An honest inventory of what works and what doesn't
+
+## Audit Findings (June 2026)
+
+Corrected claims from adversarial audit:
+
+| Original Claim | Correction | Evidence |
+|----------------|-----------|----------|
+| FD-SSM: O(dS) total, 131,072× speedup | O(K·dS) parallel, **71-705× depending on dt** | `benchmarks/fd_ssm_truncated.py` |
+| K is small (~5) | **K~922 for 1% error** at dt=0.01 (slowest HiPPO dim) | MATH (a_k^K < ε) |
+| TileLang/TMA kernels exist | **CPU proofs only** — renamed to `reference_implementations.py` | `CRITICAL_ISSUES.md` |
+| 29× vs Transformer (old) | **444×** via roofline (L=64K, pending H100) | `benchmarks/universal_latency_model.py` |
+
+Full audit track: `CLAIMS_EVIDENCE.md` (11 sections, evidence levels per claim).
+
+---
 
 See `PAPER_DIAGONAL_SSM.md` for mathematical derivation (Theorems 1 & 2).
 See `CRITICAL_ISSUES.md` for known bugs and corrections.
 See `CLAIMS_EVIDENCE.md` for the complete verified/aspirational register.
+
+## Part of the KakashiTech Research Stack
+
+AEGIS → [REVO](https://github.com/KakashiTech/REVO) → [RIN](https://github.com/KakashiTech/RIN) → [WDW](https://github.com/KakashiTech/WDW)
