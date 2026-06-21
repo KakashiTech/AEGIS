@@ -287,25 +287,24 @@ class LorentzAttention(nn.Module):
         k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
         
-        # Attention with Lorentz distances
-        scores = []
-        for h in range(self.num_heads):
-            #         Compute Lorentzian distances
-            dist_matrix = []
-            for i in range(seq_len):
-                dists = []
-                for j in range(seq_len):
-                    dist = self.manifold.lorentzian_distance(
-                        q[:, h, i], k[:, h, j]
-                    )
-                    dists.append(dist)
-                dist_matrix.append(torch.stack(dists, dim=1))
-            
-            # Convert to scores (smaller distance = higher attention)
-            score = -torch.stack(dist_matrix, dim=1) / math.sqrt(self.head_dim)
-            scores.append(score)
+        # Attention with Lorentz distances — vectorized O(B·heads·L²)
+        # Each head computes pairwise Lorentzian distances in batch.
+        # q: (B, heads, L, D), k: (B, heads, L, D)
+        # Expand: (B, h, L, 1, D) x (B, h, 1, L, D) → (B, h, L, L)
+        q_exp = q.unsqueeze(3)   # (B, H, L, 1, D)
+        k_exp = k.unsqueeze(2)   # (B, H, 1, L, D)
         
-        attn_weights = torch.stack(scores, dim=1)
+        # Lorentz inner product: -q0·k0 + q1·k1 + ... + qD·kD
+        # Minkowski metric: diag(-1, 1, 1, ..., 1)
+        minkowski_dot = -q_exp[..., 0] * k_exp[..., 0] + (q_exp[..., 1:] * k_exp[..., 1:]).sum(dim=-1)
+        
+        # Lorentzian distance: arccosh(-<q,k>_L)
+        # Clamp to avoid NaN from acosh(x<1)
+        minkowski_dot = torch.clamp(-minkowski_dot, min=1.0 + 1e-8)
+        lorentz_dist = torch.acosh(minkowski_dot)
+        
+        # Convert to attention scores (smaller distance = higher attention)
+        attn_weights = -lorentz_dist / math.sqrt(self.head_dim)
         attn_weights = F.softmax(attn_weights, dim=-1)
         
         # Apply attention

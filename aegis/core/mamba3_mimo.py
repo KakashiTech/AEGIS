@@ -26,6 +26,7 @@ class SSMConfig:
     use_mimo: bool = True
     curvature_kappa: float = 1.0
     use_diagonal_ssm: bool = True  # Diagonal++ SSM: O(dS) per step instead of O(dS²)
+    use_spectral_ssm: bool = False  # RSM: Fourier-initialized ω_k + hierarchical κ
     vocab_size: int = 50000
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -171,19 +172,19 @@ class DiagonalSSMDiscretization(nn.Module):
     """
     Diagonal discretization for Diagonal++ SSM — with scalable κ.
     
-    Uses HiPPO eigenvalues for element-wise recurrence (O(dS) per step).
-    Learnable per-dimension κ scale enables the truncated parallel scan
-    to achieve O(dS) wall time (K = O(1)).
+    Two modes:
+      1. Standard (use_spectral_ssm=False): ω_k randomly initialized, all κ=50.
+      2. RSM / Spectral (use_spectral_ssm=True): ω_k = k·π/dS (Fourier spacing),
+         hierarchical κ (dim 0→1, dim 1→10, dim≥2→50), exact ZOH discretization.
     
     λ_k = -(k + ½)  for k = 0, ..., dS-1  (HiPPO eigenvalues)
     κ_k = Sigmoid(Linear(x)_k) * scale_k    (per-dimension learnable scale)
-    ω_k = learned complex frequency
+    ω_k = tanh(raw_k) * π                   (complex frequency, bounded)
     Ā_t[k] = exp(Δ_t * κ_k * (λ_k + i * ω_k))
+    B̄_t[k] = (Ā_t[k] - 1) / (κ_k * (λ_k + i * ω_k))  (exact ZOH, not Taylor)
     h_t[k] = Ā_t[k] * h_{t-1}[k] + B̄_t[k] * x_t[k]
     
-    With κ scale initialized to 50, the slowest dimension (k=0, λ=-0.5)
-    has effective eigenvalue κ·λ = -25, giving K ≈ 10 for 1% error at
-    dt=0.01 (vs K=922 without scaling).
+    Reference: [Resonant Spectrum Model, 2026]
     """
     
     def __init__(self, config: SSMConfig):
@@ -191,22 +192,42 @@ class DiagonalSSMDiscretization(nn.Module):
         self.config = config
         self.d_state = config.d_state
         self.d_model = config.d_model
+        self.spectral = config.use_spectral_ssm
         
         # HiPPO eigenvalues: λ_k = -(k + ½)
         k = torch.arange(self.d_state, dtype=torch.float32)
         eigenvalues_real = -(k + 0.5)
         self.register_buffer('eig_real', eigenvalues_real)
         
-        # Complex frequencies (learned, bounded to [-π, π])
-        self.eig_imag_raw = nn.Parameter(torch.randn(self.d_state) * 0.01)
+        # Complex frequencies
+        if self.spectral:
+            # Fourier initialization: ω_k = k·π/dS  (uniform frequency spacing)
+            # After tanh(raw) * π: we need tanh(raw_k) = k/dS → raw_k = atanh(k/dS)
+            # This makes the SSM a learned Fourier analyzer on the spectrum.
+            k_float = torch.arange(self.d_state, dtype=torch.float32)
+            target_omega = k_float / max(self.d_state - 1, 1)  # [0, 1]
+            # arctanh clamped to avoid infinity at k=dS-1
+            raw_init = torch.arctanh(torch.clamp(target_omega, max=0.9999))
+            self.eig_imag_raw = nn.Parameter(raw_init)
+        else:
+            self.eig_imag_raw = nn.Parameter(torch.randn(self.d_state) * 0.01)
         
         # Per-dimension κ scale factor.
-        # Without scaling: κ∈[0,1] via Sigmoid → K=922 for dim 0 at dt=0.01.
-        # With scale: κ = Sigmoid(x) * scale_k → scale_k can be 1-500+.
-        #   scale_k=50 → K≈10, scale_k=500 → K≈2.
-        # Initialised to 50 so the model starts with fast decay and
-        # can learn to slow down specific dimensions if needed.
-        self.kappa_scale = nn.Parameter(torch.ones(self.d_state) * 50.0)
+        if self.spectral:
+            # Hierarchical timescale initialization:
+            #   dim 0: κ=1  → λ_eff = -0.5     → half-life = 139 steps (long memory)
+            #   dim 1: κ=10 → λ_eff = -15      → half-life = 5 steps (medium)
+            #   dim≥2: κ=50 → λ_eff ≥ -125     → half-life ≤ 0.5 steps (local)
+            # This creates a natural timescale hierarchy (cf. HiPPO).
+            init_scale = torch.ones(self.d_state)
+            init_scale[0] = 1.0
+            if self.d_state > 1:
+                init_scale[1] = 10.0
+            if self.d_state > 2:
+                init_scale[2:] = 50.0
+            self.kappa_scale = nn.Parameter(init_scale)
+        else:
+            self.kappa_scale = nn.Parameter(torch.ones(self.d_state) * 50.0)
         
         # Hyperbolic curvature base: Sigmoid ensures κ_base ∈ [0, 1]
         self.kappa_base = nn.Sequential(
@@ -224,13 +245,9 @@ class DiagonalSSMDiscretization(nn.Module):
             B_bar: (B, L, dS) — complex scalars per dimension
         """
         device = delta.device
-        batch_size, seq_len, _ = delta.shape
         
         # κ = Sigmoid(x) * scale  —  (B, L, dS) * (dS,) = (B, L, dS)
-        # Per-dimension scaling: dims with large scale decay fast (K small),
-        # dims with small scale retain long memory.
-        # The Sigmoid base [0,1] ensures κ ≥ 0 (no NaN).
-        kappa = self.kappa_base(x) * self.kappa_scale.to(device)  # (B, L, dS)
+        kappa = self.kappa_base(x) * self.kappa_scale.to(device)
         
         # Full eigenvalue: λ_eff_k = κ_k * (λ_k + i * ω_k)
         eig_imag = torch.tanh(self.eig_imag_raw.to(device)) * math.pi
@@ -240,11 +257,20 @@ class DiagonalSSMDiscretization(nn.Module):
         # Δ_t: average over dt_rank
         dt = delta.mean(dim=-1, keepdim=True)  # (B, L, 1)
         
-        # Ā_t = exp(Δt · λ_eff)
+        # Ā_t = exp(Δt · λ_eff) — exact
         A_bar = torch.exp(dt * eig_scaled)  # (B, L, dS)
         
-        # B̄_t = trapezoidal discretization
-        B_bar = dt * (1.0 + dt * eig_scaled / 2.0)  # (B, L, dS)
+        # B̄_t = (Ā_t - 1) / λ_eff  — exact ZOH discretization
+        # Avoids the first-order Taylor approximation sign oscillation bug.
+        # For λ_eff very close to zero, uses Taylor expansion as safe fallback.
+        lambda_safe = eig_scaled.clone()
+        zero_mask = lambda_safe.abs() < 1e-8
+        if zero_mask.any():
+            lambda_safe = torch.where(zero_mask, torch.ones_like(lambda_safe), lambda_safe)
+        B_bar = (A_bar - 1.0) / lambda_safe
+        if zero_mask.any():
+            # Taylor for near-zero: B ≈ dt * (1 + λ·dt/2 + λ²·dt²/6 + ...)
+            B_bar = torch.where(zero_mask, dt * (1.0 + dt * eig_scaled / 2.0), B_bar)
         
         return A_bar, B_bar
 

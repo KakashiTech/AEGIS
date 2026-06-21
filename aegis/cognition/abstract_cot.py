@@ -254,13 +254,17 @@ class VSAModule(nn.Module):
         """
         Encode a complex structure (e.g., "John eats apple")
         """
-        # Convert to indices
+        # Convert to indices (deterministic hash via hashlib, not Python's salted hash)
+        import hashlib
+        def deterministic_hash(s: str, mod: int) -> int:
+            return int(hashlib.md5(s.encode()).hexdigest(), 16) % mod
+        
         role_indices = torch.tensor(
-            [hash(r) % 100 for r in roles],
+            [deterministic_hash(r, 100) for r in roles],
             device=device
         ).unsqueeze(0)
         entity_indices = torch.tensor(
-            [hash(e) % 10000 for e in entities],
+            [deterministic_hash(e, 10000) for e in entities],
             device=device
         ).unsqueeze(0)
         
