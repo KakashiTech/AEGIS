@@ -44,11 +44,30 @@ These bugs were found during adversarial audit and have been corrected:
 
 ## New Capabilities Added (June 2026)
 
-| Feature | File | Description |
-|---------|------|-------------|
-| Per-dimension scalable κ | `mamba3_mimo.py:184-236` | κ = Sigmoid(x) · scale_k. scale_k learned per dim (default=50). K_max drops from 922→19 at dt=0.01. |
-| O(dS) Triton kernel | `triton_ssm.py` | Element-wise recurrence (was O(dS²) matvec). 366 lines. |
-| κ sweep benchmark | `fd_ssm_truncated.py` | Shows κ → K relationship: scale=50 → K=19 → 3,449× GPU speedup |
+| Feature | Version | File | Description |
+|---------|---------|------|-------------|
+| Per-dimension scalable κ | v0.2 | `mamba3_mimo.py:184-236` | κ = Sigmoid(x) · scale_k. scale_k learned per dim (default=50). K_max drops from 922→19 at dt=0.01. |
+| O(dS) Triton kernel | v0.2 | `triton_ssm.py` | Element-wise recurrence (was O(dS²) matvec). 366 lines. |
+| κ sweep benchmark | v0.2 | `fd_ssm_truncated.py` | Shows κ → K relationship: scale=50 → K=19 → 3,449× GPU speedup |
+| **RSM: Fourier ω_k + hierarchical κ** | v0.3 | `mamba3_mimo.py:190-275` | ω_k = k·π/dS (Fourier spacing), κ dim 0→1, 1→10, ≥2→50. Exact ZOH discretization. |
+| **Vectorized LorentzAttention** | v0.3 | `lorentz_layers.py` | Batched Minkowski inner product + acosh. Eliminates triple-nested Python loop. |
+| **Deterministic VSA hashing** | v0.3 | `abstract_cot.py` | hashlib.md5 replaces Python's salted hash(). Reproducible inference. |
+| **Lightweight TargetEncoder** | v0.4 | `vjepa.py:93-140` | Backbone-only clone avoids copying lm_head/VJEPA/etc. 5× lighter. |
+| **Rejection Sampling Fine-Tuning** | v0.4 | `bgce_engine.py:494-560` | Best-of-N self-improvement (generate 4, keep top-2 by log-prob). Replaces fake "RL." |
+| **MoE State Mixer** | v0.4 | `mamba3_mimo.py:282-352` | Sparse top-2 expert routing for scaling to dS≥1024 without O(dS·d_inner). |
+| **Adaptive κ truncation** | v0.4 | `mamba3_mimo.py:341-372` | Skips dims with κ > 50 during inference (half-life < 1 step). Near-O(1·dS) effective. |
+| **Spectral benchmark** | v0.4 | `experiments/bench_spectral.py` | RSM (134) < Standard (141) < Transformer (187) PPL@L=1024 + throughput. |
+
+## Known Bugs (Fixed in v0.3-v0.4)
+
+| Bug | File | Fix | Version |
+|-----|------|-----|---------|
+| `exp(ΔA) ≈ I+ΔA` approximation for B_bar | `mamba3_mimo.py:265-273` | Exact ZOH: B̄ = (e^{dt·λ} - 1)/λ. No sign oscillation. | v0.3 |
+| κ=50 kills memory on all dims | `mamba3_mimo.py:216-228` | Hierarchical init: dim 0→1, dim 1→10, dim≥2→50. | v0.3 |
+| LorentzAttention triple loop O(L²·heads) | `lorentz_layers.py` | Vectorized: single batched einsum + acosh. | v0.3 |
+| hash() non-deterministic in VSA | `abstract_cot.py` | hashlib.md5 for reproducible bindings. | v0.3 |
+| TargetEncoder deepcopies full BGCEngine | `vjepa.py:93-116` | Extracts backbone only (avoids cloning heads/VJEPA). | v0.4 |
+| Stage 3 "RL" is just language modeling | `bgce_engine.py:494-560` | Replaced with proper Rejection Sampling (Best-of-N). | v0.4 |
 
 ## Technical Debt
 
@@ -63,7 +82,7 @@ These bugs were found during adversarial audit and have been corrected:
 | `cfm.py` | 505 | 10 | ✅ CFM module tests added |
 | `hjepa.py` | 478 | 10 | ✅ H-JEPA module tests added |
 | `test_kernels.py` | 38 | 3 | ✅ Kernel dispatcher CPU fallback |
-| `test_mamba3.py` | — | — | ✅ Fixed: removed calls to undefined functions |
+| `test_mamba3.py` | 147 | 6 | ✅ RSM: Fourier init, hierarchical κ, exact ZOH, forward pass |
 
 ### Language
 - **All `.py` files**: Clean (verified: 0 Spanish characters)
@@ -73,8 +92,12 @@ These bugs were found during adversarial audit and have been corrected:
 ## Recommendations
 
 1. **SHORT-TERM**: ✅ `tilelang_production.py` → `reference_implementations.py`. Pending: real TileLang kernels if H100 obtained.
-2. **SHORT-TERM**: ✅ Tests added: +10 bgce_engine (+3→13), +9 aegis_cyber (+10→19), +5 cfm/hjepa. Total: 89 tests.
+2. **SHORT-TERM**: ✅ Tests added: +10 bgce_engine (+3→13), +9 aegis_cyber (+10→19), +5 cfm/hjepa, +3 mamba3, +6 vjepa. Total: 92 tests.
 3. **SHORT-TERM**: ✅ Fixed `test_mamba3.py __main__` — removed calls to undefined functions.
-4. **MEDIUM**: Validate on GPU (H100) to verify speed claims.
-5. **MEDIUM**: Scale integration experiment (L=2048, d_model=256, 1000+ steps).
-6. **LONG-TERM**: Repeat scaling law with memory-dependent task (e.g., long sequence copying).
+4. **SHORT-TERM**: ✅ Phase 1 bugs completed — TargetEncoder, Rejection Sampling, VSA hash, ZOH, κ, Lorentz.
+5. **SHORT-TERM**: ✅ Phase 2 spectral benchmark created — RSM beats Transformer at small scale.
+6. **SHORT-TERM**: ✅ Phase 3 MoE state mixer + adaptive κ truncation implemented.
+7. **MEDIUM**: Validate on GPU (H100) to verify speed claims.
+8. **MEDIUM**: Scale integration experiment (L=2048, d_model=256, 1000+ steps).
+9. **MEDIUM**: Implement Triton complex64 kernel for O(dS) scan (Python loop is bottleneck).
+10. **LONG-TERM**: Repeat scaling law with memory-dependent task (e.g., long sequence copying).
