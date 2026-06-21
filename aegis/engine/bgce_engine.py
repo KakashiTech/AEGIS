@@ -84,6 +84,7 @@ class BGCEConfig:
     max_new_tokens: int = 128
     temperature: float = 0.8
     top_p: float = 0.95
+    eos_token_id: int = 2
 
 
 class LorentzHead(nn.Module):
@@ -141,7 +142,6 @@ class ContinualLiquidNeurons(nn.Module):
         
         # ODE parameters
         self.W = nn.Linear(dim, dim)
-        self.U = nn.Linear(dim, dim)
         
         # Continuous activation function
         self.activation = nn.Tanh()
@@ -336,7 +336,7 @@ class BGCEngine(nn.Module):
             
             generated = torch.cat([generated, next_token], dim=1)
             
-            if (next_token == 2).all():
+            if (next_token == self.config.eos_token_id).all():
                 break
         
         return generated

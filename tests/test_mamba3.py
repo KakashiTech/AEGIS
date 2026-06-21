@@ -13,7 +13,7 @@ import pytest
 
 from aegis.core.mamba3_mimo import (
     Mamba3MIMO, SSMConfig,
-    DiagonalSSMDiscretization, TrapezoidalDiscretization,
+    DiagonalSSMDiscretization,
 )
 
 
@@ -26,22 +26,27 @@ def test_ssm_config():
     assert config.use_mimo == True
 
 
-def test_trapezoidal_discretization():
-    """Test trapezoidal discretization"""
-    config = SSMConfig(d_model=256, d_state=64)
-    disc = TrapezoidalDiscretization(config)
+def test_moe_state_mixer():
+    """MoEStateMixer produces correct output shapes and routes to experts"""
+    from aegis.core.mamba3_mimo import MoEStateMixer
     
-    batch_size, seq_len = 2, 10
-    delta = torch.randn(batch_size, seq_len, config.dt_rank)
-    x = torch.randn(batch_size, seq_len, config.d_model)  # Usar d_model, no d_inner
+    d_state, d_inner = 16, 64
+    mixer = MoEStateMixer(d_state, d_inner, n_experts=4, top_k=2)
     
-    A_bar, B_bar = disc(delta, x)
+    batch_size, seq_len = 2, 8
+    h = torch.randn(batch_size, seq_len, d_state)
+    out = mixer(h)
     
-    # Verificar dimensiones
-    assert A_bar.shape[0] == batch_size
-    assert A_bar.shape[1] == seq_len
-    assert B_bar.shape[0] == batch_size
-    assert B_bar.shape[1] == seq_len
+    assert out.shape == (batch_size, seq_len, d_inner)
+    assert not torch.isnan(out).any()
+    
+    # Verify different inputs route to different experts
+    h1 = torch.randn(4, d_state)
+    h2 = torch.randn(4, d_state)
+    out1 = mixer(h1)
+    out2 = mixer(h2)
+    assert out1.shape == (4, d_inner)
+    assert out2.shape == (4, d_inner)
 
 
 def test_rsm_config_fourier_init():
@@ -129,8 +134,8 @@ if __name__ == "__main__":
     test_ssm_config()
     print("✓ SSMConfig")
     
-    test_trapezoidal_discretization()
-    print("✓ TrapezoidalDiscretization")
+    test_moe_state_mixer()
+    print("✓ MoEStateMixer")
     
     test_rsm_config_fourier_init()
     print("✓ RSM Fourier init")

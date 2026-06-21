@@ -51,48 +51,58 @@ class LorentzManifold:
     
     def expmap0(self, v: torch.Tensor) -> torch.Tensor:
         """
-        Exponential map from origin
+        Exponential map from origin.
+        
+        For tangent vector v at origin (v₀ = 0):
+          x₀ = cosh(||v_space||)
+          x_space = v_space · sinh(||v_space||) / ||v_space||
         """
+        v_space = v[..., 1:]
         v_norm = torch.sqrt(torch.clamp(
-            self.minkowski_norm(v), min=self.eps
+            (v_space ** 2).sum(dim=-1, keepdim=True), min=self.eps
         ))
         
-        # Componente temporal
-        x_0 = torch.cosh(v_norm)
-        # Componentes espaciales
-        x_space = v[..., 1:] * (torch.sinh(v_norm) / v_norm).unsqueeze(-1)
+        x_0 = torch.cosh(v_norm).squeeze(-1)
+        x_space = v_space * (torch.sinh(v_norm) / v_norm)
         
         return torch.cat([x_0.unsqueeze(-1), x_space], dim=-1)
     
     def logmap0(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Logarithmic map to origin
+        Logarithmic map to origin.
+        
+        For x on the hyperboloid (x₀ > 0, -x₀² + ||x_space||² = -1/κ):
+          v₀ = 0  (tangent vectors at origin have zero time component)
+          v_space = x_space · acosh(√κ · x₀) / √(κ · x₀² - 1)
         """
-        x_norm = torch.sqrt(torch.clamp(
-            self.minkowski_norm(x), min=self.eps
-        ))
+        sqrt_k = math.sqrt(self.curvature)
+        x0 = x[..., 0:1]
+        x_space = x[..., 1:]
         
-        # Componente temporal
-        v_0 = x[..., 0]
-        # Componentes espaciales
-        v_space = x[..., 1:] * (torch.acosh(torch.clamp(x[..., 0], min=1.0 + self.eps)) / 
-                                 torch.sqrt(torch.clamp(x_norm, min=self.eps))).unsqueeze(-1)
+        # acosh(√κ · x₀) with clamp for numerical safety
+        acosh_arg = torch.clamp(sqrt_k * x0, min=1.0 + self.eps)
+        angle = torch.acosh(acosh_arg)
         
-        return torch.cat([v_0.unsqueeze(-1), v_space], dim=-1)
+        # sinh(acosh(z)) = √(z² - 1)
+        sinh_arg = torch.sqrt(torch.clamp(acosh_arg.pow(2) - 1.0, min=self.eps))
+        
+        # Tangent vector at origin: v₀ = 0
+        v_0 = torch.zeros_like(x0)
+        v_space = x_space * (angle / sinh_arg)
+        
+        return torch.cat([v_0, v_space], dim=-1)
     
     def proj(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Projection to Lorentz manifold
+        Projection to Lorentz manifold (x₀ > 0, future-directed sheet)
         """
-        # Normalizar para estar en el hiperboloide
         x_norm = torch.sqrt(torch.clamp(
             torch.abs(self.minkowski_norm(x)), min=self.eps
         ))
         
-        # Asegurar componente temporal positiva
         x_proj = x / x_norm.unsqueeze(-1)
-        x_proj = torch.abs(x_proj)
-        x_proj[..., 0] = -x_proj[..., 0]  # Negative by signature convention
+        # Ensure future-directed sheet: x₀ must be > 0 for acosh in logmap0
+        x_proj = torch.where(x_proj[..., 0:1] > 0, x_proj, -x_proj)
         
         return x_proj
 
@@ -250,65 +260,7 @@ class PoincareProjection(nn.Module):
         return torch.acosh(1 + num / (den + self.eps))
 
 
-class LorentzAttention(nn.Module):
-    """
-    Attention mechanism in Lorentz space
-    """
-    
-    def __init__(self, dim: int, num_heads: int = 8, curvature: float = 1.0):
-        super().__init__()
-        self.dim = dim
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.curvature = curvature
-        self.manifold = LorentzManifold(curvature, dim // num_heads)
-        
-        self.q_proj = LorentzLinear(dim, dim, curvature)
-        self.k_proj = LorentzLinear(dim, dim, curvature)
-        self.v_proj = nn.Linear(dim, dim)
-        self.out_proj = nn.Linear(dim, dim)
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: (B, L, dim+1) en coordenadas de Lorentz
-        Returns:
-            output: (B, L, dim)
-        """
-        batch_size, seq_len, _ = x.shape
-        
-        # Proyecciones
-        q = self.q_proj(x)  # (B, L, dim)
-        k = self.k_proj(x)  # (B, L, dim)
-        v = self.v_proj(x[..., 1:])  # (B, L, dim) - usar componentes espaciales
-        
-        # Reshape para multi-head
-        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        
-        # Attention with Lorentz distances — vectorized O(B·heads·L²)
-        # Each head computes pairwise Lorentzian distances in batch.
-        # q: (B, heads, L, D), k: (B, heads, L, D)
-        # Expand: (B, h, L, 1, D) x (B, h, 1, L, D) → (B, h, L, L)
-        q_exp = q.unsqueeze(3)   # (B, H, L, 1, D)
-        k_exp = k.unsqueeze(2)   # (B, H, 1, L, D)
-        
-        # Lorentz inner product: -q0·k0 + q1·k1 + ... + qD·kD
-        # Minkowski metric: diag(-1, 1, 1, ..., 1)
-        minkowski_dot = -q_exp[..., 0] * k_exp[..., 0] + (q_exp[..., 1:] * k_exp[..., 1:]).sum(dim=-1)
-        
-        # Lorentzian distance: arccosh(-<q,k>_L)
-        # Clamp to avoid NaN from acosh(x<1)
-        minkowski_dot = torch.clamp(-minkowski_dot, min=1.0 + 1e-8)
-        lorentz_dist = torch.acosh(minkowski_dot)
-        
-        # Convert to attention scores (smaller distance = higher attention)
-        attn_weights = -lorentz_dist / math.sqrt(self.head_dim)
-        attn_weights = F.softmax(attn_weights, dim=-1)
-        
-        # Apply attention
-        output = torch.matmul(attn_weights, v)
-        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.dim)
-        
-        return self.out_proj(output)
+# NOTE: LorentzAttention was removed in v0.4 — it computed Minkowski inner
+# products over Euclidean Q/K vectors, which is geometrically unsound.
+# A proper hyperbolic attention layer would require Q/K to live on the
+# Lorentz manifold. Re-implement if needed.

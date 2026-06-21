@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import Dict, Tuple, Optional
 import math
+import hashlib
 
 
 @dataclass
@@ -134,9 +135,10 @@ class SystemOneExpert(nn.Module):
         """
         self.total_queries += hidden_states.size(0)
         
-        # Check cache (simplificado)
+        # Check cache (deterministic via hashlib)
         if use_cache:
-            cache_key = hash(hidden_states[0, 0, :5].detach().cpu().numpy().tobytes())
+            bytes_key = hidden_states[0, 0, :5].detach().cpu().numpy().tobytes()
+            cache_key = hashlib.md5(bytes_key).hexdigest()
             if cache_key in self.response_cache:
                 self.cache_hits += 1
                 return self.response_cache[cache_key]

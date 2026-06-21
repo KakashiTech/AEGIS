@@ -140,7 +140,7 @@ class PartialCausalGraph(nn.Module):
         
         for var_idx in range(self.config.n_causal_vars):
             # Get parents of this variable
-            parents_mask = adjacency[:, var_idx] > 0.5  # (n_vars,)
+            parents_mask = adjacency[:, var_idx] > self.config.graph_sparsity  # (n_vars,)
             
             if parents_mask.sum() == 0:
                 # Root variable (no parents)
@@ -410,8 +410,9 @@ class ATEEstimator(nn.Module):
         std_1 = torch.stack(outcomes_treatment_1).std(dim=0)
         std_0 = torch.stack(outcomes_treatment_0).std(dim=0)
         
-        ci_lower = ate - 1.96 * torch.sqrt(std_1**2 + std_0**2)
-        ci_upper = ate + 1.96 * torch.sqrt(std_1**2 + std_0**2)
+        n = max(self.config.n_mc_samples, 1)
+        ci_lower = ate - 1.96 * torch.sqrt(std_1**2 + std_0**2) / math.sqrt(n)
+        ci_upper = ate + 1.96 * torch.sqrt(std_1**2 + std_0**2) / math.sqrt(n)
         
         return {
             'ate': ate.mean().item(),
@@ -565,12 +566,13 @@ class CausalFoundationModel(nn.Module):
             error = abs(ate_estimated - ate_reference)
             accuracy = max(0, 1 - error / abs(ate_reference + 1e-8))
         else:
+            ate_reference = None
             accuracy = None
             error = None
         
         return {
             'ate_estimated': ate_estimated,
-            'ate_reference': ate_reference if reference_model_predictions is not None else None,
+            'ate_reference': ate_reference,
             'error': error,
             'accuracy_vs_specialized': accuracy,
             'is_zero_shot': True

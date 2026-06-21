@@ -13,7 +13,7 @@ import math
 
 from aegis.geometry.lorentz_layers import (
     LorentzManifold, LorentzLinear, LorentzProjection,
-    PoincareProjection, LorentzAttention
+    PoincareProjection
 )
 
 
@@ -126,20 +126,20 @@ def test_poincare_projection():
     assert not torch.isnan(x_back).any()
 
 
-def test_lorentz_attention():
-    """Test Lorentz attention"""
-    attn = LorentzAttention(dim=64, num_heads=4, curvature=1.0)
+def test_lorentz_proj_logmap_consistency():
+    """Lorentz projection then logmap0 returns finite values (no NaN from acosh)"""
+    manifold = LorentzManifold(curvature=1.0, dim=16)
     
-    batch_size, seq_len = 2, 10
-    x = torch.randn(batch_size, seq_len, 65)
+    x = torch.randn(4, 17)  # (B, dim+1)
+    x_proj = manifold.proj(x)
     
-    output = attn(x)
+    # Verify x₀ > 0 (future-directed sheet)
+    assert (x_proj[..., 0] > 0).all(), "proj must output x₀ > 0 for acosh"
     
-    # Verificar dimensiones
-    assert output.shape == (batch_size, seq_len, 64)
-    
-    # Verificar que no hay NaN
-    assert not torch.isnan(output).any()
+    # logmap0 should return finite values (no NaN from acosh of negative)
+    v = manifold.logmap0(x_proj)
+    assert not torch.isnan(v).any(), "logmap0 returns NaN after proj"
+    assert not torch.isinf(v).any(), "logmap0 returns Inf after proj"
 
 
 if __name__ == '__main__':
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     test_poincare_projection()
     print("✓ PoincareProjection")
     
-    test_lorentz_attention()
-    print("✓ LorentzAttention")
+    test_lorentz_proj_logmap_consistency()
+    print("✓ proj + logmap0 (no NaN)")
     
     print("\n✓ All Lorentz tests passed!")

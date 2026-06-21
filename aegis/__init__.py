@@ -12,18 +12,28 @@ Components:
   - AEGIS Cyber: physical flow-based intrusion detection
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 
-from .core.mamba3_mimo import Mamba3MIMO, SSMConfig
-from .geometry.lorentz_layers import LorentzLinear, LorentzProjection
-from .learning.vjepa import VJEPA, VJEPAConfig
-from .cognition.abstract_cot import AbstractCoT, VSAModule
-from .engine.bgce_engine import BGCEngine, BGCEConfig
+from .core.mamba3_mimo import Mamba3MIMO, SSMConfig, MoEStateMixer
+from .geometry.lorentz_layers import LorentzLinear, LorentzProjection, LorentzManifold, PoincareProjection
+from .learning.vjepa import VJEPA, VJEPAConfig, TargetEncoder, Predictor, EBM_energy
+from .learning.hjepa import HJEPA, HJEPAConfig
+from .cognition.abstract_cot import AbstractCoT, VSAModule, HyperdimensionalEncoder, CircularConvolution
+from .cognition.latent_mas import LatentMAS, LatentMASConfig
+from .cognition.odar_expert import ODARExpertSystem, ODARConfig
+from .engine.bgce_engine import BGCEngine, BGCEConfig, TrainingPipeline, InferenceEngine
+from .causality.cfm import CausalFoundationModel, CFMConfig
+from .security.aegis_cyber import AEGISCyberDefense, AEGISCyberConfig
 
 __all__ = [
-    "Mamba3MIMO", "SSMConfig",
-    "LorentzLinear", "LorentzProjection",
-    "VJEPA", "VJEPAConfig",
-    "AbstractCoT", "VSAModule",
-    "BGCEngine", "BGCEConfig",
+    "Mamba3MIMO", "SSMConfig", "MoEStateMixer",
+    "LorentzLinear", "LorentzProjection", "LorentzManifold", "PoincareProjection",
+    "VJEPA", "VJEPAConfig", "TargetEncoder", "Predictor", "EBM_energy",
+    "HJEPA", "HJEPAConfig",
+    "AbstractCoT", "VSAModule", "HyperdimensionalEncoder", "CircularConvolution",
+    "LatentMAS", "LatentMASConfig",
+    "ODARExpertSystem", "ODARConfig",
+    "BGCEngine", "BGCEConfig", "TrainingPipeline", "InferenceEngine",
+    "CausalFoundationModel", "CFMConfig",
+    "AEGISCyberDefense", "AEGISCyberConfig",
 ]
