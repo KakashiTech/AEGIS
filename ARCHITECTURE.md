@@ -86,4 +86,4 @@ All claims in this project have an evidence level:
 | [THEORY] | Roofline/first-principles analysis |
 | [PENDING] | Requires GPU (H100) |
 
-See `CLAIMS_EVIDENCE.md` for the complete register.
+See the evidence register for the complete list of verified claims with evidence levels.

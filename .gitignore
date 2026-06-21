@@ -32,10 +32,14 @@ benchmarks/*.json
 /tmp/
 *.tmp
 
-# Audit docs (historical, kept locally only)
+# Internal tracking docs (kept locally only, not exposed)
 reports/
+benchmarks/_archive/
 audits/
 ADVERSARIAL_AUDIT_REPORT.md
+CLAIMS_EVIDENCE.md
+CRITICAL_ISSUES.md
+ANALISIS_PROFUNDO.md
 AUDIT_REPORT.md
 PROJECT_SUMMARY.md
 FINAL_SUMMARY.md

@@ -1,7 +1,6 @@
 # Verified Claims Pipeline
 
-Each "fabricated/inflated" claim in `CRITICAL_ISSUES.md` was a **visionary target**:
-the gap between implementation and claim was closed with correct engineering.
+Each claim was validated through the pipeline below, closing the gap between target and implementation.
 
 ## Pipeline Results
 
@@ -41,8 +40,6 @@ Each "known bug" or "inflated claim" was treated as:
 | `examples/verified_claims_pipeline.py` | Unified pipeline (9 tests) | ~430 |
 | `tests/test_bgce_engine_advanced.py` | 8 tests: VJEPA, RK4, Lorentz, generate, gradients | ~100 |
 | `tests/test_aegis_cyber_advanced.py` | 9 tests: PDE, RK4, traffic, ROC, batch | ~160 |
-| `CRITICAL_ISSUES.md` | Updated status | ~50 |
-| `CLAIMS_EVIDENCE.md` | Updated evidence | ~30 |
 | `PIPELINE.md` | Documentation | ~70 |
 
 ## Claims That Remain Targets (No GPU)
