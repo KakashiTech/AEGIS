@@ -92,33 +92,55 @@ class EBM_energy(nn.Module):
 
 class TargetEncoder(nn.Module):
     """
-    Target encoder updated via EMA
-    Provides stable targets for the predictor
+    Target encoder updated via EMA.
+    
+    Clones ONLY the core backbone (+ liquid layer if present), NOT the full
+    composite model. For BGCEngine this avoids cloning lm_head, lorentz_head,
+    VJEPA, AbstractCoT — preventing O(d_model²·n_layers) waste.
+    
+    Provides stable targets for the predictor.
     """
     
     def __init__(self, encoder: nn.Module, ema_decay: float = 0.9998):
         super().__init__()
-        self.encoder = copy.deepcopy(encoder)
         self.ema_decay = ema_decay
         
-        # Freeze target encoder parameters
-        for param in self.encoder.parameters():
+        # Extract core backbone (avoids cloning heads/VJEPA/etc. for composite models)
+        backbone = encoder.backbone if hasattr(encoder, 'backbone') else encoder
+        self.core = copy.deepcopy(backbone.module if hasattr(backbone, 'module') else backbone)
+        
+        # Also clone liquid layer if the composite model has one
+        if hasattr(encoder, 'liquid_layer'):
+            self.liquid = copy.deepcopy(encoder.liquid_layer)
+        else:
+            self.liquid = nn.Identity()
+        
+        # Freeze everything
+        for param in self.core.parameters():
+            param.requires_grad = False
+        for param in self.liquid.parameters():
             param.requires_grad = False
     
     @torch.no_grad()
     def update(self, online_encoder: nn.Module):
-        """Update using Exponential Moving Average"""
-        for param_t, param_s in zip(self.encoder.parameters(), 
-                                     online_encoder.parameters()):
+        """Update using Exponential Moving Average over matching parameters"""
+        source = online_encoder.backbone if hasattr(online_encoder, 'backbone') else online_encoder
+        for param_t, param_s in zip(self.core.parameters(), source.parameters()):
             param_t.data.mul_(self.ema_decay).add_(
                 param_s.data, alpha=1 - self.ema_decay
             )
+        if hasattr(online_encoder, 'liquid_layer') and not isinstance(self.liquid, nn.Identity):
+            for param_t, param_s in zip(self.liquid.parameters(), online_encoder.liquid_layer.parameters()):
+                param_t.data.mul_(self.ema_decay).add_(
+                    param_s.data, alpha=1 - self.ema_decay
+                )
     
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.encoder(x, return_hidden=True)
+        out = self.core(x, return_hidden=True)
         if isinstance(out, dict):
-            return out['hidden_states']
+            out = out['hidden_states']
+        out = self.liquid(out)
         return out
 
 

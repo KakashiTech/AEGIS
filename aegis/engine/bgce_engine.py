@@ -491,42 +491,77 @@ class TrainingPipeline:
         pbar.close()
         return losses
     
-    def stage3_rl_tuning(self, dataloader: DataLoader, num_steps: int = 5000):
+    def stage3_rejection_sampling(self, dataloader: DataLoader, num_steps: int = 5000,
+                                   num_completions: int = 4, top_k_completions: int = 2):
         """
-        Etapa 3. RL with constrained decoding
+        Stage 3: Self-Improvement via Rejection Sampling.
+        
+        Generates N completions per prompt, scores by average log-probability
+        (length-normalized), keeps top-K, trains on those with cross-entropy.
+        
+        This is a practical RL stage without requiring a critic network.
+        Equivalent to Best-of-N fine-tuning (Stiennon et al. 2020).
         """
-        # Simplified: fine-tuning with reward shaping
         self.model.train()
         losses = []
         
-        pbar = tqdm(total=num_steps, desc="Stage 3: RL Tuning")
+        pbar = tqdm(total=num_steps, desc="Stage 3: Rejection Sampling")
         
         for step, batch in enumerate(dataloader):
             if step >= num_steps:
                 break
             
             input_ids = batch['input_ids'].to(self.device)
+            prompt_len = input_ids.size(1) // 2  # first half as prompt
+            prompt = input_ids[:, :prompt_len]
             
-            # Generar con reasoning
-            with torch.no_grad():
-                generated = self.model.generate(
-                    input_ids[:, :10],  # Contexto corto
-                    max_new_tokens=50,
-                    use_reasoning=True
+            # Generate N completions
+            completions = []
+            scores = []
+            for _ in range(num_completions):
+                with torch.no_grad():
+                    gen = self.model.generate(
+                        prompt,
+                        max_new_tokens=64,
+                        use_reasoning=True
+                    )
+                    new_tokens = gen[:, prompt_len:]
+                    if new_tokens.size(1) == 0:
+                        continue
+                    
+                    # Score: length-normalized average log-probability
+                    outputs = self.model(gen, use_reasoning=True)
+                    logits = outputs['logits'][:, prompt_len - 1:-1]
+                    log_probs = F.log_softmax(logits, dim=-1)
+                    token_log_probs = log_probs.gather(
+                        -1, new_tokens.unsqueeze(-1)
+                    ).squeeze(-1)
+                    avg_log_prob = token_log_probs.mean(dim=-1).item()
+                    
+                    completions.append(gen)
+                    scores.append(avg_log_prob)
+            
+            if not completions:
+                continue
+            
+            # Keep top-K by score
+            indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+            top_indices = indices[:top_k_completions]
+            
+            # Train on selected completions
+            loss_total = 0.0
+            for idx in top_indices:
+                gen = completions[idx]
+                outputs = self.model(gen, use_reasoning=True)
+                logits = outputs['logits']
+                loss = F.cross_entropy(
+                    logits[:, :-1].reshape(-1, logits.size(-1)),
+                    gen[:, 1:].reshape(-1)
                 )
+                loss_total += loss
             
-            # Reward: eficiencia de razonamiento
-            outputs = self.model(generated, use_reasoning=True)
-            
-            # Simulate reward (in practice, use real RL)
-            logits = outputs['logits']
-            
-            # Loss con reward weighting
-            loss = F.cross_entropy(
-                logits[:, :-1].reshape(-1, logits.size(-1)),
-                generated[:, 1:].reshape(-1)
-            )
-            
+            loss = loss_total / len(top_indices)
+            loss = loss / self.config.gradient_accumulation_steps
             loss.backward()
             
             if (step + 1) % self.config.gradient_accumulation_steps == 0:
@@ -542,7 +577,10 @@ class TrainingPipeline:
             
             if step % 100 == 0:
                 avg_loss = sum(losses[-100:]) / min(len(losses), 100)
-                pbar.set_postfix({'loss': f'{avg_loss:.4f}'})
+                pbar.set_postfix({
+                    'loss': f'{avg_loss:.4f}',
+                    'best_score': f'{max(scores):.3f}'
+                })
             
             pbar.update(1)
         

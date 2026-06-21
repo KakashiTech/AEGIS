@@ -43,6 +43,10 @@ def test_target_encoder():
     
     # Verify dimensions
     assert output.shape == (batch_size, seq_len, ssm_config.d_model)
+    
+    # Verify target encoder is frozen (gradients disabled)
+    for param in target_enc.core.parameters():
+        assert not param.requires_grad
 
 
 def test_target_encoder_update():
@@ -53,7 +57,7 @@ def test_target_encoder_update():
     target_enc = TargetEncoder(online_encoder, ema_decay=0.9)
     
     # Save initial weights
-    initial_weight = list(target_enc.encoder.parameters())[0].data.clone()
+    initial_weight = list(target_enc.core.parameters())[0].data.clone()
     
     # Modify online encoder
     for param in online_encoder.parameters():
@@ -63,7 +67,7 @@ def test_target_encoder_update():
     target_enc.update(online_encoder)
     
     # Verify change
-    new_weight = list(target_enc.encoder.parameters())[0].data
+    new_weight = list(target_enc.core.parameters())[0].data
     assert not torch.allclose(initial_weight, new_weight)
 
 

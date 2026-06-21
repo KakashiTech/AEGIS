@@ -28,6 +28,10 @@ class SSMConfig:
     use_diagonal_ssm: bool = True  # Diagonal++ SSM: O(dS) per step instead of O(dS²)
     use_spectral_ssm: bool = False  # RSM: Fourier-initialized ω_k + hierarchical κ
     vocab_size: int = 50000
+    use_state_moe: bool = False  # MoE state mixer for scaling to large dS
+    state_moe_experts: int = 4   # number of experts in MoE mixer
+    state_moe_topk: int = 2      # experts selected per token
+    use_kappa_truncation: bool = False  # skip fast-decaying dims during inference
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -275,6 +279,78 @@ class DiagonalSSMDiscretization(nn.Module):
         return A_bar, B_bar
 
 
+class MoEStateMixer(nn.Module):
+    """
+    Mixture-of-Experts state mixer.
+    
+    Replaces nn.Linear(d_state, d_inner) with a sparse MoE:
+    - Router: dS → n_experts (softmax top-k)
+    - Each expert: small MLP: dS/n_experts → d_inner/n_experts → d_inner
+    - Selected experts combined by router weights
+    
+    This keeps the FLOPs sub-linear in dS for large state dimensions,
+    enabling scaling to dS=1024+ without O(dS·d_inner) cost.
+    """
+    
+    def __init__(self, d_state: int, d_inner: int, n_experts: int = 4, top_k: int = 2):
+        super().__init__()
+        self.d_state = d_state
+        self.d_inner = d_inner
+        self.n_experts = n_experts
+        self.top_k = min(top_k, n_experts)
+        self.d_expert_state = max(1, d_state // n_experts)
+        self.d_expert_inner = max(1, d_inner // n_experts)
+        
+        # Router: d_state → logits over experts
+        self.router = nn.Linear(d_state, n_experts, bias=False)
+        
+        # Experts: each is a 2-layer MLP
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(self.d_expert_state, self.d_expert_inner * 4, bias=False),
+                nn.SiLU(),
+                nn.Linear(self.d_expert_inner * 4, d_inner, bias=False),
+            )
+            for _ in range(n_experts)
+        ])
+    
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            h: (..., d_state) hidden states
+        Returns:
+            output: (..., d_inner) mixed states
+        """
+        *batch_shape, d = h.shape
+        h_2d = h.reshape(-1, d)
+        B = h_2d.size(0)
+        
+        # Router
+        router_logits = self.router(h_2d)  # (B, n_experts)
+        router_weights = F.softmax(router_logits, dim=-1)
+        
+        # Top-k selection
+        topk_weights, topk_indices = torch.topk(router_weights, self.top_k, dim=-1)
+        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+        
+        # Split hidden states for expert routing
+        h_split = h_2d.chunk(self.n_experts, dim=-1)
+        
+        output = torch.zeros(B, self.d_inner, device=h.device, dtype=h.dtype)
+        for k in range(self.top_k):
+            expert_idx = topk_indices[:, k]
+            weight = topk_weights[:, k].unsqueeze(-1)
+            for e in range(self.n_experts):
+                mask = (expert_idx == e)
+                if not mask.any():
+                    continue
+                expert_in = h_split[e][mask]
+                expert_out = self.experts[e](expert_in)
+                output[mask] += weight[mask] * expert_out
+        
+        return output.view(*batch_shape, self.d_inner)
+
+
 class Mamba3Block(nn.Module):
     """Bloque Mamba-3 individual con SSM complejo y MIMO"""
     
@@ -300,7 +376,16 @@ class Mamba3Block(nn.Module):
             warnings.warn("use_diagonal_ssm=False is deprecated. Using Diagonal++.")
         self.discretizer = DiagonalSSMDiscretization(config)
         self.x_to_state = nn.Linear(config.d_inner, config.d_state, bias=False)
-        self.state_mixer = nn.Linear(config.d_state, config.d_inner, bias=False)
+        if config.use_state_moe:
+            self.state_mixer = MoEStateMixer(
+                config.d_state, config.d_inner,
+                n_experts=config.state_moe_experts,
+                top_k=config.state_moe_topk
+            )
+            self._state_mixer_is_moe = True
+        else:
+            self.state_mixer = nn.Linear(config.d_state, config.d_inner, bias=False)
+            self._state_mixer_is_moe = False
         
         # delta_t projection
         self.dt_proj = nn.Linear(config.dt_rank, config.d_inner, bias=True)
@@ -335,15 +420,38 @@ class Mamba3Block(nn.Module):
         # c_t = B̄_t * x_t (element-wise)
         c = B_bar * x_state  # (B, L, dS)
         
+        # Adaptive κ truncation: skip dims with κ > survival_threshold
+        # (half-life < 1 step → decay to zero immediately)
+        if self.config.use_kappa_truncation and hasattr(self.discretizer, 'kappa_scale'):
+            kappa = self.discretizer.kappa_scale.data.to(device)
+            # κ > 50 → |λ_eff| > 125 → half-life < 0.005 steps
+            active_dims = kappa <= 50.0
+            n_active = active_dims.sum().item()
+        else:
+            active_dims = slice(None)
+            n_active = self.d_state
+        
         # --- Scan diagonal: h_t = Ā_t ⊙ h_{t-1} + c_t ---
         # Elimina el bmm O(dS²) del scan original, reemplazado por mul O(dS).
         # Sin matmuls, sin complex value dynamics costosos.
-        h = torch.zeros(batch_size, self.d_state, device=device, dtype=A_bar.dtype)
-        h_states = []
-        for t in range(seq_len):
-            h = A_bar[:, t] * h + c[:, t]  # element-wise: O(dS) por paso
-            h_states.append(h)
-        h = torch.stack(h_states, dim=1)
+        if isinstance(active_dims, slice):
+            h = torch.zeros(batch_size, self.d_state, device=device, dtype=A_bar.dtype)
+            h_states = []
+            for t in range(seq_len):
+                h = A_bar[:, t] * h + c[:, t]  # element-wise: O(dS) por paso
+                h_states.append(h)
+            h = torch.stack(h_states, dim=1)
+        else:
+            # Truncated: scan only active dims
+            A_active = A_bar[..., active_dims]
+            c_active = c[..., active_dims]
+            h_active = torch.zeros(batch_size, n_active, device=device, dtype=A_active.dtype)
+            h_states = []
+            for t in range(seq_len):
+                h_active = A_active[:, t] * h_active + c_active[:, t]
+                h_states.append(h_active)
+            h = torch.zeros(batch_size, seq_len, self.d_state, device=device, dtype=A_bar.dtype)
+            h[..., active_dims] = torch.stack(h_states, dim=1)
         
         # State mixer: projects d_state → d_inner (all channels with temporal signal)
         h = self.state_mixer(h.real if h.is_complex() else h)
