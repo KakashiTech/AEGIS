@@ -128,6 +128,4 @@ python experiments/quantization/quant_ssm.py  # INT8 compression ratio
 }
 ```
 
----
 
-*Links*: [`PAPER_DIAGONAL_SSM.md`](PAPER_DIAGONAL_SSM.md) · [`CLAIMS_EVIDENCE.md`](CLAIMS_EVIDENCE.md) · [`CRITICAL_ISSUES.md`](CRITICAL_ISSUES.md) · [`ANALISIS_PROFUNDO.md`](ANALISIS_PROFUNDO.md)
