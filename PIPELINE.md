@@ -52,5 +52,5 @@ Each "known bug" or "inflated claim" was treated as:
 | Sub-ms at 64K | TMA dispatch overhead unknown | PENDING (H100) |
 | 444× speedup | Real implementation vs roofline | PENDING (H100) |
 | 83.7% compression | Requires real trained latents | PENDING (training) |
-| FD-SSM O(dS) total | Mathematically requires O(K·dS); corrected | ✅ RESOLVED (see fd_ssm_truncated.py) |
+| FD-SSM O(dS) total | Mathematically requires O(K·dS); corrected | ✅ RESOLVED (see benchmarks/fd_ssm_truncated.py) |
 | Triton/TileLang kernels | `import triton` fails without GPU | PENDING (H100) |

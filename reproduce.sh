@@ -3,7 +3,7 @@ set -e
 echo "=== BGCE Reproducibility Suite ==="
 
 echo ""
-echo "--- Unit Tests (10 suites, 74 tests) ---"
+echo "--- Unit Tests (12 suites, 89 tests) ---"
 python -m pytest tests/ -v --tb=short 2>&1 | tail -5
 
 echo ""

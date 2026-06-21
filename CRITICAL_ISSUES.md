@@ -62,7 +62,7 @@ These bugs were found during adversarial audit and have been corrected:
 | `bgce_engine.py` | 619 | 13 | ✅ VJEPA integration, RK4 liquid, Lorentz, generate, gradient flow |
 | `cfm.py` | 505 | 10 | ✅ CFM module tests added |
 | `hjepa.py` | 478 | 10 | ✅ H-JEPA module tests added |
-| `kernels.py` | — | 3 | ✅ Kernel dispatcher CPU fallback |
+| `test_kernels.py` | 38 | 3 | ✅ Kernel dispatcher CPU fallback |
 | `test_mamba3.py` | — | — | ✅ Fixed: removed calls to undefined functions |
 
 ### Language

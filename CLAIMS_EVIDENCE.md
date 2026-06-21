@@ -113,7 +113,7 @@ Every substantive claim made by the AEGIS project, with evidence classification.
 
 | Level | Evidence |
 |-------|----------|
-| CPU | `reference_implementations.py::benchmark_mimo_vs_conv()` — reference implementations |
+| CPU | `aegis/kernels/reference_implementations.py::benchmark_mimo_vs_conv()` — reference implementations |
 | CPU | Current CPU: MIMO slower than single conv1d (speedup 0.14×). Reason: CPU implementation is not parallelized. True speedup requires GPU where 4 streams run in parallel on tensor cores. |
 | MATH | MIMO: 1 matmul of size (D×4D) → 4D² FLOPs. Conv1d seq: 4 conv of size D×kernel → 4·D·kernel·L FLOPs. At L=1024, D=512, kernel=4: MIMO=1M, Conv=8M → 8× fewer FLOPs. |
 | PENDING | GPU benchmark once H100 available |
@@ -126,7 +126,7 @@ Every substantive claim made by the AEGIS project, with evidence classification.
 
 | Level | Evidence |
 |-------|----------|
-| CPU | `reference_implementations.py::LatentMASProCompression` — CPU proof of concept |
+| CPU | `aegis/kernels/reference_implementations.py::LatentMASProCompression` — CPU proof of concept |
 | CPU | 768→128 dims: 6.0× compression, 42% variance explained on random data |
 | ASPIRE | On real latent representations, variance capture would be 85-95% (SVD optimal for correlated data). The 83.7% reduction (16:1) requires structured data with high redundancy. |
 | PENDING | Need real training run to demonstrate on learned latents |
@@ -139,7 +139,7 @@ Every substantive claim made by the AEGIS project, with evidence classification.
 
 | Level | Evidence |
 |-------|----------|
-| CPU | `reference_implementations.py::CausalTimePriorTrainer` — reference implementation |
+| CPU | `aegis/kernels/reference_implementations.py::CausalTimePriorTrainer` — reference implementation |
 | CPU | Forward pass works on synthetic data. ATE estimation function written. |
 | ASPIRE | Full "intervention training improves OOD" requires real causal dataset or simulation with known counterfactuals. |
 | PENDING | Synthetic causal benchmark with ground truth |
