@@ -99,24 +99,24 @@ print(f'Gradient flow OK: total_grad={total_grad:.4f}')
 
 echo ""
 echo "--- Hobbit Dataset 1: Shakespeare Tiny (character-level LM) ---"
-python -u /home/tuffhk/Work/HOBBIT/examples/train_shakespeare_tiny.py 2>&1 | tail -20
+python -u "$(dirname "$0")/examples/train_shakespeare_tiny.py" 2>&1 | tail -20
 
 echo ""
 echo "--- Hobbit Dataset 2: Algebraic Reasoning (OOD generalization) ---"
-python -u /home/tuffhk/Work/HOBBIT/examples/train_algebraic_reasoning.py 2>&1 | tail -20
+python -u "$(dirname "$0")/examples/train_algebraic_reasoning.py" 2>&1 | tail -20
 
 echo ""
 echo "--- Hobbit Dataset 3: Traffic Anomaly Detection ---"
-python -u /home/tuffhk/Work/HOBBIT/examples/train_traffic_anomaly.py 2>&1 | tail -15
+python -u "$(dirname "$0")/examples/train_traffic_anomaly.py" 2>&1 | tail -15
 
 echo ""
 echo "--- AEGIS Live Demo (10s synthetic traffic) ---"
-python -u /home/tuffhk/Work/HOBBIT/examples/aegis_live_demo.py --demo --duration 8 2>&1 | tail -15
+python -u "$(dirname "$0")/examples/aegis_live_demo.py" --demo --duration 8 2>&1 | tail -15
 
 echo ""
 echo "--- Causal VJEPA (causal direction learning) ---"
 echo "   Hypothesis: causal error < anti-causal error"
-python -u /home/tuffhk/Work/HOBBIT/examples/causal_vjepa_demo.py 2>&1 | tail -15
+python -u "$(dirname "$0")/examples/causal_vjepa_demo.py" 2>&1 | tail -15
 
 echo ""
 echo "--- Diagonal++ Scaling Law (dS vs loss vs compute) ---"
@@ -169,17 +169,17 @@ print(f'  {\"Thermo Regularizer active\" if r > 3 else \"Small effect\"}')
 echo ""
 echo "--- Integration Experiment (T1+T2+T3: compound effect) ---"
 echo "   Hypothesis: Causal mask + Diag++ + Thermo < Baseline"
-python -u /home/tuffhk/Work/HOBBIT/examples/integration_experiment.py 2>&1 | tail -8
+python -u "$(dirname "$0")/examples/integration_experiment.py" 2>&1 | tail -8
 
 echo ""
 echo "--- LatentMAS Pro Compression (measured on CPU) ---"
 echo "   Hypothesis: 16:1 compression with <2% normalized error"
-python -u /home/tuffhk/Work/HOBBIT/examples/latent_mas_demo.py 2>&1 | tail -12
+python -u "$(dirname "$0")/examples/latent_mas_demo.py" 2>&1 | tail -12
 
 echo ""
 echo "--- CausalTimePrior: Intervention Semantics ---"
 echo "   Hypothesis: do-operator breaks parent edges"
-python -u /home/tuffhk/Work/HOBBIT/examples/causal_time_prior_demo.py 2>&1 | tail -10
+python -u "$(dirname "$0")/examples/causal_time_prior_demo.py" 2>&1 | tail -10
 
 echo ""
 echo "--- Universal Latency Model (CPU → H100 projection) ---"
@@ -190,9 +190,8 @@ python -u /home/tuffhk/Work/HOBBIT/benchmarks/universal_latency_model.py 2>&1 | 
 echo ""
 echo "--- Verified Claims Pipeline (all gaps closed) ---"
 echo "   Validates: 35.5% improvement, RK4, Amortized ATE, eig_imag clamp"
-python -u /home/tuffhk/Work/HOBBIT/examples/verified_claims_pipeline.py 2>&1 | tail -30
+python -u "$(dirname "$0")/examples/verified_claims_pipeline.py" 2>&1 | tail -30
 
 echo ""
 echo "=== All results reproduced ==="
 echo "See PAPER_DIAGONAL_SSM.md for the mathematical paper."
-echo "See CLAIMS_EVIDENCE.md for the complete evidence register."
